@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict
 import json
 import logging
-from collections import deque  # Mesaj limitini yönetmek için
 
 # Loglama ayarı
 logging.basicConfig(level=logging.INFO)
@@ -21,63 +20,53 @@ app.add_middleware(
 
 class ConnectionManager:
     def __init__(self):
-        # Canlı bağlantılar: { "oda_id": [ {ws, name}, ... ] }
+        # Odadaki Kullanıcılar: { "oda_id": [ {"ws": WebSocket, "name": "Yusuf"}, ... ] }
         self.rooms: Dict[str, List[dict]] = {}
         
-        # [YENİ] Sohbet Geçmişi: { "oda_id": [msg1, msg2, ...] }
-        # Her oda için son 50 mesajı tutacağız.
-        self.chat_history: Dict[str, deque] = {}
+        # [YENİ] Odaların URL Hafızası: { "oda_id": "https://youtube.com/..." }
+        self.room_urls: Dict[str, str] = {}
 
     async def connect(self, websocket: WebSocket, room_id: str, username: str):
         await websocket.accept()
-        
-        # Oda listesinde yoksa oluştur
         if room_id not in self.rooms:
             self.rooms[room_id] = []
-            
-        # Oda geçmişi yoksa oluştur (Maksimum 50 mesaj sakla)
-        if room_id not in self.chat_history:
-            self.chat_history[room_id] = deque(maxlen=50)
-
-        # Kullanıcıyı ekle
         self.rooms[room_id].append({"ws": websocket, "name": username})
-        logger.info(f"Baglanti: {username} -> {room_id}")
-
-        # [YENİ] GEÇMİŞİ YÜKLE
-        # Kullanıcı bağlanır bağlanmaz eski mesajları ona gönderiyoruz
-        if len(self.chat_history[room_id]) > 0:
-            for old_msg in self.chat_history[room_id]:
-                try:
-                    await websocket.send_json(old_msg)
-                except:
-                    pass
         
-        # Güncel kullanıcı listesini yayınla
+        logger.info(f"Baglanti: {username} -> {room_id}")
+        
+        # 1. Kullanıcı Listesini Güncelle
         await self.broadcast_user_list(room_id)
+
+        # [YENİ] 2. Odanın URL'ini Yeni Gelene Bildir (Varsa)
+        if room_id in self.room_urls:
+            current_url = self.room_urls[room_id]
+            logger.info(f"Yeni kullanıcıya URL senkronize ediliyor: {current_url}")
+            await websocket.send_json({
+                "type": "SYNC_URL",
+                "url": current_url,
+                "user": "Sistem"
+            })
 
     def disconnect(self, websocket: WebSocket, room_id: str):
         try:
             if room_id in self.rooms:
                 self.rooms[room_id] = [user for user in self.rooms[room_id] if user["ws"] != websocket]
                 
-                # [DEĞİŞİKLİK] Odayı hemen silmiyoruz!
-                # Eğer oda boşalsa bile chat geçmişi (self.chat_history) hafızada kalsın istiyoruz.
-                # Sadece bağlantı listesi boşsa o key'i silebiliriz ama history kalsın.
+                # Oda boşaldıysa hem listeyi hem URL hafızasını sil
                 if not self.rooms[room_id]:
                     del self.rooms[room_id]
-                    # Not: self.chat_history[room_id] silinmediği için 
-                    # odaya sonradan girenler mesajları görecek.
+                    if room_id in self.room_urls:
+                        del self.room_urls[room_id]
         except Exception as e:
             logger.error(f"Disconnect Hatasi: {e}")
 
     async def broadcast(self, message: dict, room_id: str):
-        # [YENİ] Mesaj Kaydetme Mantığı
-        # Sadece 'CHAT' tipindeki mesajları hafızaya alıyoruz.
-        # Video komutlarını (PLAY/PAUSE) kaydetmeye gerek yok.
-        if message.get("type") == "CHAT":
-            if room_id not in self.chat_history:
-                self.chat_history[room_id] = deque(maxlen=50)
-            self.chat_history[room_id].append(message)
+        # [YENİ] Eğer URL değiştiyse hafızaya kaydet
+        if message.get("type") == "URL_CHANGE":
+            new_url = message.get("url")
+            if new_url:
+                self.room_urls[room_id] = new_url
+                logger.info(f"Oda {room_id} URL değişti: {new_url}")
 
         if room_id in self.rooms:
             for user in self.rooms[room_id][:]:
@@ -104,13 +93,12 @@ manager = ConnectionManager()
 
 @app.get("/")
 def read_root():
-    return {"Status": "Co Watch Server (v7.0 Memory Enabled) 🧠"}
+    return {"Status": "Co Watch Server (v2.0 URL Sync) 🚀"}
 
 @app.websocket("/ws/{room_id}/{username}")
 async def websocket_endpoint(websocket: WebSocket, room_id: str, username: str):
     await manager.connect(websocket, room_id, username)
     try:
-        # Sisteme giriş bildirimi
         await manager.broadcast({
             "type": "SYSTEM",
             "message": f"{username} odaya katıldı."
@@ -134,7 +122,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, username: str):
     except WebSocketDisconnect:
         logger.info(f"WebSocket koptu: {username}")
     except Exception as e:
-        logger.error(f"Hata ({username}): {e}")
+        logger.error(f"Hata: {e}")
     finally:
         manager.disconnect(websocket, room_id)
         await manager.broadcast_user_list(room_id)
