@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "Co-Watch Extension",
+  "version": "1.3.0",
+  "description": "Arkadaşlarla senkronize video izleme ve chat eklentisi.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "webRequest",
+    "alarms" 
+  ],
+  "host_permissions": [
+    "*://*.primevideo.com/*",
+    "*://*.amazon.com/*",
+    "*://*.amazon.com.tr/*",
+    "*://*.netflix.com/*",
+    "*://*.youtube.com/*",
+    "*://*.dizibox.live/*",
+    "*://*.vidmoly.to/*",
+    "*://*.upstream.to/*",
+    "*://*.molystream.org/*",
+    "*://*.molystream.net/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.primevideo.com/*",
+        "*://*.amazon.com/*",
+        "*://*.amazon.com.tr/*",
+        "*://*.youtube.com/*",
+        "*://*.netflix.com/*",
+        "*://*.dizibox.live/*",
+        "*://*.vidmoly.to/*",
+        "*://*.upstream.to/*",
+	"*://*.molystream.org/*",
+    	"*://*.molystream.net/*"
+      ],
+      "js": [
+        "content_script.js"
+      ],
+      "all_frames": true
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Co-Watch</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: #eee; margin: 0; padding: 20px; width: 260px; }
+        h2 { margin: 0 0 15px 0; font-size: 18px; text-align: center; color: #ff9900; }
+        .view { display: none; }
+        .active-view { display: block; }
+        label { display: block; font-size: 11px; margin-bottom: 5px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
+        input { width: 100%; box-sizing: border-box; padding: 10px; background: #222; border: 1px solid #444; border-radius: 8px; color: #fff; margin-bottom: 15px; outline: none; transition: border 0.3s; }
+        input:focus { border-color: #ff9900; }
+        button { width: 100%; padding: 12px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.2s; margin-bottom: 10px; }
+        button:active { transform: scale(0.96); }
+        .btn-primary { background: #ff9900; color: #000; }
+        .btn-primary:hover { background: #e68a00; }
+        .btn-secondary { background: #333; color: #fff; }
+        .btn-secondary:hover { background: #444; }
+        .btn-danger { background: #ff4444; color: #fff; }
+        .btn-danger:hover { background: #cc0000; }
+        .divider { display: flex; align-items: center; margin: 5px 0 15px 0; color: #555; font-size: 11px; }
+        .divider::before, .divider::after { content: ""; flex: 1; border-bottom: 1px solid #333; }
+        .divider:not(:empty)::before { margin-right: .5em; }
+        .divider:not(:empty)::after { margin-left: .5em; }
+        .room-badge { background: #ff990022; color: #ff9900; padding: 10px; border-radius: 8px; text-align: center; font-size: 16px; font-weight: bold; margin-bottom: 15px; border: 1px dashed #ff9900; }
+        #status-msg { font-size: 11px; text-align: center; margin-top: 5px; min-height: 15px; }
+    </style>
+</head>
+<body>
+    <h2>🍿 Co-Watch</h2>
+
+    <div id="view-setup" class="view active-view">
+        <label>Senin Nick'in</label>
+        <input type="text" id="nickname" placeholder="Örn: Yusuf">
+        <button id="btn-create" class="btn-primary">Yeni Oda Kur</button>
+        <div class="divider">VEYA</div>
+        <label>Oda Kodu</label>
+        <input type="text" id="room-id" placeholder="Davet kodunu gir">
+        <button id="btn-join" class="btn-secondary">Odaya Katıl</button>
+    </div>
+
+    <div id="view-active" class="view">
+        <div style="text-align: center; color: #aaa; font-size: 12px; margin-bottom: 5px;">Şu an odadasınız:</div>
+        <div id="active-room-id" class="room-badge">CW-XXXXXX</div>
+        <button id="btn-show-chat" class="btn-primary" style="margin-bottom:10px;">💬 Chat Ekranını Göster</button>
+        <button id="btn-leave" class="btn-danger">🚪 Odadan Çık</button>
+    </div>
+
+    <div id="status-msg"></div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
