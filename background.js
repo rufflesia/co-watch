@@ -16,7 +16,9 @@ function initSocket() {
 
     socket = io(SERVER_URL, { 
         transports: ['websocket'],
-        upgrade: false 
+        upgrade: true, // Upgrade işlemine izin verin
+        reconnection: true, // Bağlantı koparsa otomatik tekrar bağlanması için
+        reconnectionAttempts: Infinity
     });
 
     socket.on("connect", () => {
