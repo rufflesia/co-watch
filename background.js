@@ -1,6 +1,6 @@
 importScripts('socket.io.js');
 
-const SERVER_URL = "http://localhost:3000";
+const SERVER_URL = "http://https://co-watch-ogdz.onrender.com";
 let socket = null;
 
 // MV3 Service Worker'ı hayatta tutmak için (Keep-Alive) Ping
