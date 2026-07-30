@@ -48,7 +48,12 @@ io.on('connection', (socket) => {
     // ==========================================================
     // 📡 GİZLİ TELEMETRİ TÜNELİ (İstemcideki logları terminale basar)
     // ==========================================================
-    
+    socket.on('clientRemoteLog', ({ tag, msg, meta }) => {
+        const nick = rooms[meta?.roomId]?.users?.[socket.id]?.nickname || "Bilinmeyen Sekme";
+        console.log(`\n[🏷️ ${tag}] (Kullanıcı: ${nick}) -> ${msg}`);
+        if (meta) console.log(`   └─ Detay:`, JSON.stringify(meta));
+    });
+
     socket.on('createRoom', ({ roomId, platform, videoId, url, nickname }, callback) => {
         rooms[roomId] = {
             adminId: socket.id,
@@ -176,9 +181,6 @@ io.on('connection', (socket) => {
         }
 
         let isIdMismatch = (data.videoId && data.videoId !== room.videoState.videoId);
-      
-
-      
 
         if (isIdMismatch && room.videoState.platform === 'amazon') {
             const guestUrlHasHostId = data.url && data.url.includes(room.videoState.videoId);
@@ -363,6 +365,14 @@ io.on('connection', (socket) => {
             if (room.chatHistory.length > room.settings.maxMessages) room.chatHistory.shift();
             io.to(data.roomId).emit('newMessage', messageObj);
         }
+    });
+
+    socket.on('typing', (data) => {
+        const room = rooms[data.roomId];
+        if (!room) return;
+        const nickname = room.users[socket.id]?.nickname;
+        if (!nickname) return;
+        socket.to(data.roomId).emit('typingIndicator', { nickname });
     });
 
     socket.on('leaveRoom', (data) => {
