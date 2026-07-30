@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
    function verifyAndSend(actionType, roomId, nickname) {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             const tab = tabs[0];
-            if (!tab || !tab.url.match(/amazon|primevideo|youtube|dizibox/i)) {
+            if (!tab || !tab.url.match(/amazon|primevideo|youtube|dizibox|fullhdfilmizlesene|rapidvid/i)) {
                 showStatus("Önce desteklenen bir video sitesi açın!", "#ff4444");
                 return;
             }
@@ -46,7 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 let fallbackPlatform = "unknown";
                 if (tab.url.match(/amazon|primevideo/i)) fallbackPlatform = "amazon";
                 else if (tab.url.match(/youtube/i)) fallbackPlatform = "youtube";
-                else if (tab.url.match(/dizibox|vidmoly|upstream|molystream/i)) fallbackPlatform = "dizibox";
+                else if (tab.url.match(/dizibox|vidmoly|upstream|molystream|fullhdfilmizlesene|rapidvid/i)) fallbackPlatform = "dizibox";
 
                 let videoData = { platform: fallbackPlatform, videoId: null, url: tab.url };
                 
