@@ -18,7 +18,9 @@
     "*://*.dizibox.live/*",
     "*://*.vidmoly.to/*",
     "*://*.upstream.to/*",
+    "*://*.rapidvid.net/*",
     "*://*.molystream.org/*",
+    "*://*.fullhdfilmizlesene.mx/*",
     "*://*.molystream.net/*"
   ],
   "background": {
@@ -35,7 +37,9 @@
         "*://*.dizibox.live/*",
         "*://*.vidmoly.to/*",
         "*://*.upstream.to/*",
+	"*://*.rapidvid.net/*",
 	"*://*.molystream.org/*",
+	"*://*.fullhdfilmizlesene.mx/*",
     	"*://*.molystream.net/*"
       ],
       "js": [
