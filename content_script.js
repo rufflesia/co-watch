@@ -1,5 +1,5 @@
 // ============================================================================
-// CO-WATCH CORE V4.5 - SEAMLESS THEATER MODE WITH TOGGLE & ESC SUPPORT
+// CO-WATCH CORE V4.6
 // ============================================================================
 const PLATFORM_SELECTORS = {
     amazon: { title: '.atvwebplayersdk-title-text', subtitle: '.atvwebplayersdk-subtitle-text', playButton: '[data-testid="dp-atf-play-button"], [data-automation-id="dp-atf-play-button"]' },
@@ -10,7 +10,7 @@ const PLATFORM_SELECTORS = {
 function detectPlatformFromUrl(url) {
     if (url.includes("amazon") || url.includes("primevideo")) return "amazon";
     if (url.includes("youtube")) return "youtube";
-    if (url.match(/dizibox|vidmoly|upstream|molystream/i)) return "dizibox";
+    if (url.match(/dizibox|vidmoly|upstream|molystream|fullhdfilmizlesene|rapidvid/i)) return "dizibox";
     return "unknown";
 }
 
@@ -21,7 +21,6 @@ class VideoHandler {
         this.ui = uiController;
         this.trackedSrc = videoElement.src;
         this.ignoreNext = { play: false, pause: false, seek: false };
-
         console.log(`🎬 Co-Watch: Handler initialized for ${this.constructor.name}`);
         this.bindListeners();
         this.hookMediaSession();
@@ -48,7 +47,6 @@ class VideoHandler {
             this.ui.updateProgress(this.video.currentTime, this.video.duration);
             this.ui.checkTransitionState(this);
         };
-
         this.video.addEventListener('play', this._onPlay);
         this.video.addEventListener('pause', this._onPause);
         this.video.addEventListener('seeking', this._onSeek);
@@ -67,10 +65,7 @@ class VideoHandler {
     emitAction(action) {
         if (!this.roomId || this.ui.isTransitioning || this.ui.isAdPlaying) return;
         const videoData = this.extractMetadata();
-        chrome.runtime.sendMessage({
-            action: "OUT_USER_ACTION",
-            data: { roomId: this.roomId, action: action, time: this.video.currentTime, isPlaying: !this.video.paused, videoId: videoData.videoId }
-        });
+        chrome.runtime.sendMessage({ action: "OUT_USER_ACTION", data: { roomId: this.roomId, action, time: this.video.currentTime, isPlaying: !this.video.paused, videoId: videoData.videoId } });
     }
 
     emitBuffer(isBuffering) {
@@ -83,14 +78,13 @@ class VideoHandler {
             this.ignoreNext.seek = true;
             this.video.currentTime = cmd.time;
             this.ui.syncLock = true;
-            setTimeout(() => { this.ui.syncLock = false; }, 2500);
+            setTimeout(() => { this.ui.syncLock = false; }, 1500);
         }
         if (cmd.action === 'play' && this.video.paused) {
             this.ignoreNext.play = true;
-            const playPromise = this.video.play();
-            if (playPromise !== undefined) playPromise.catch(() => { this.ignoreNext.play = false; });
-        }
-        else if (cmd.action === 'pause' && !this.video.paused) {
+            const p = this.video.play();
+            if (p !== undefined) p.catch(() => { this.ignoreNext.play = false; });
+        } else if (cmd.action === 'pause' && !this.video.paused) {
             this.ignoreNext.pause = true;
             this.video.pause();
         }
@@ -101,10 +95,7 @@ class VideoHandler {
         const data = this.extractMetadata();
         this.ui.setTitle(data.title);
         if (!this.video.paused && !this.ui.isTransitioning && !this.ui.syncLock && !this.ui.isAdPlaying) {
-            chrome.runtime.sendMessage({
-                action: "OUT_SYNC_TIME",
-                data: { roomId: this.roomId, time: this.video.currentTime, isPlaying: true, platform: data.platform, videoId: data.videoId, url: data.url }
-            });
+            chrome.runtime.sendMessage({ action: "OUT_SYNC_TIME", data: { roomId: this.roomId, time: this.video.currentTime, isPlaying: true, platform: data.platform, videoId: data.videoId, url: data.url } });
         }
     }
 
@@ -151,7 +142,6 @@ class AmazonHandler extends VideoHandler {
     extractMetadata() {
         const url = window.location.href;
         let videoId = window.coWatchInstance.globalNetworkGTI || AmazonHandler.lastClickedGTI;
-
         if (!videoId) {
             const hydrationScript = document.getElementById('dv-web-page-hydration-data');
             if (hydrationScript) {
@@ -166,7 +156,6 @@ class AmazonHandler extends VideoHandler {
             const dpMatch = url.match(/(?:dp|detail|video\/detail)\/([a-zA-Z0-9]+)/i);
             videoId = gtiMatch ? gtiMatch[1] : (dpMatch ? dpMatch[1] : null);
         }
-
         const titleEl = document.querySelector(PLATFORM_SELECTORS.amazon.title);
         const subtitleEl = document.querySelector(PLATFORM_SELECTORS.amazon.subtitle);
         let displayTitle = "Amazon Prime Video";
@@ -176,7 +165,7 @@ class AmazonHandler extends VideoHandler {
         } else {
             displayTitle = document.title.replace("Prime Video: ", "").trim();
         }
-        return { platform: 'amazon', videoId: videoId, url: url, title: displayTitle };
+        return { platform: 'amazon', videoId, url, title: displayTitle };
     }
 }
 
@@ -189,14 +178,8 @@ class YouTubeHandler extends VideoHandler {
 }
 
 class DiziboxHandler extends VideoHandler {
-    constructor(videoElement, roomId, uiController) {
-        super(videoElement, roomId, uiController);
-    }
-
-    destroy() {
-        super.destroy();
-    }
-
+    constructor(videoElement, roomId, uiController) { super(videoElement, roomId, uiController); }
+    destroy() { super.destroy(); }
     extractMetadata() {
         let actualUrl = window.coWatchInstance.topUrl || window.location.href;
         let videoId = "dizibox-video";
@@ -204,10 +187,9 @@ class DiziboxHandler extends VideoHandler {
             const urlObj = new URL(actualUrl);
             videoId = urlObj.pathname.replace(/\/$/, '') || "generic-video";
         } catch (e) {}
-
         const titleEl = window === window.top ? document.querySelector(PLATFORM_SELECTORS.dizibox.title) : null;
         let displayTitle = titleEl ? titleEl.innerText : (document.title || "Dizi/Film İzleme");
-        return { platform: 'dizibox', videoId: videoId, url: actualUrl, title: displayTitle };
+        return { platform: 'dizibox', videoId, url: actualUrl, title: displayTitle };
     }
 }
 
@@ -218,7 +200,6 @@ class CoWatchCore {
         this.activeHandler = null;
         this.isMainFrame = (window === window.top);
         this.shadow = null;
-
         this.isTransitioning = false;
         this.targetTransitionId = null;
         this.transitionTimeout = null;
@@ -226,6 +207,9 @@ class CoWatchCore {
         this.pendingCommand = null;
         this.globalNetworkGTI = null;
         this.isAdPlaying = false;
+        this.redirectEnabled = true;
+        this.showProgressBar = true;
+        this.typingTimeout = null;
 
         this.topUrl = window.location.href;
         if (!this.isMainFrame) {
@@ -252,9 +236,60 @@ class CoWatchCore {
             body.cw-theater-mode iframe[src*="molystream"],
             body.cw-theater-mode iframe[src*="vidmoly"],
             body.cw-theater-mode iframe[src*="upstream"],
-            body.cw-theater-mode iframe[src*="king"] {
+            body.cw-theater-mode iframe[src*="king"],
+            body.cw-theater-mode iframe[src*="rapidvid"] {
                 position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important;
                 z-index: 2147483645 !important; border: none !important; background: #000 !important;
+            }
+            /* Sabit mod (chat kaydırma) + tiyatro modu birlikte açıksa, video 100vw yerine
+               sidebar'a yer açacak şekilde daralsın - yoksa video sidebar'ın altında/arkasında kalır */
+            body.cw-theater-mode.cw-fixed-mode iframe[src*="molystream"],
+            body.cw-theater-mode.cw-fixed-mode iframe[src*="vidmoly"],
+            body.cw-theater-mode.cw-fixed-mode iframe[src*="upstream"],
+            body.cw-theater-mode.cw-fixed-mode iframe[src*="king"],
+            body.cw-theater-mode.cw-fixed-mode iframe[src*="rapidvid"] {
+                width: calc(100vw - 340px) !important;
+            }
+            html.cw-fixed-mode { overflow-x: hidden !important; }
+            body.cw-fixed-mode * { max-width: none !important; }
+            body.cw-fixed-mode {
+                width: calc(100vw - 340px) !important;
+                margin: 0 !important;
+                padding-right: 0 !important;
+                overflow-x: hidden !important;
+                transition: width 0.3s ease;
+            }
+		
+	    html.cw-youtube-fixed-mode, body.cw-youtube-fixed-mode {
+                width: calc(100vw - 340px) !important;
+                overflow-x: hidden !important;
+                margin: 0 !important;
+            }
+            /* YouTube'un ana sayfa motorunu daraltır */
+            html.cw-youtube-fixed-mode ytd-app {
+                width: calc(100vw - 340px) !important;
+            }
+            /* YouTube üst arama çubuğunun (masthead) chat'in altında kalmasını engeller */
+            html.cw-youtube-fixed-mode ytd-masthead {
+                width: calc(100vw - 340px) !important;
+                right: 340px !important; 
+            }
+
+
+	    html.cw-amazon-fixed-mode, body.cw-amazon-fixed-mode {
+                width: calc(100vw - 340px) !important;
+                overflow-x: hidden !important;
+                margin: 0 !important;
+            }
+            /* Amazon'un normal ekranında player'ı daralt */
+            html.cw-amazon-fixed-mode .webPlayerContainer,
+            html.cw-amazon-fixed-mode .atvwebplayersdk-playercontainer {
+                width: calc(100vw - 340px) !important;
+            }
+            /* Amazon tam ekrandayken sağdan chat kadar boşluk (padding) bırak */
+            body.cw-amazon-fixed-mode :fullscreen {
+                padding-right: 340px !important;
+                box-sizing: border-box !important;
             }
         `;
         document.head.appendChild(style);
@@ -263,24 +298,18 @@ class CoWatchCore {
     handleNativeFullscreen() {
         document.addEventListener('fullscreenchange', () => {
             if (!this.isMainFrame && document.fullscreenElement) {
-                document.exitFullscreen().then(() => {
-                    this.safeSendMessage({ action: "TOGGLE_THEATER_MODE" });
-                }).catch(e => console.log(e));
-            }
-            else if (this.isMainFrame) {
+                document.exitFullscreen().then(() => { this.safeSendMessage({ action: "TOGGLE_THEATER_MODE" }); }).catch(e => console.log(e));
+            } else if (this.isMainFrame) {
                 const host = document.getElementById('cowatch-root');
                 if (!host) return;
                 if (document.fullscreenElement) {
-                    if (document.fullscreenElement.tagName !== 'IFRAME') {
-                        document.fullscreenElement.appendChild(host);
-                    }
+                    if (document.fullscreenElement.tagName !== 'IFRAME') document.fullscreenElement.appendChild(host);
                 } else {
                     document.body.appendChild(host);
                     document.body.classList.remove('cw-theater-mode');
                 }
             }
         });
-
         window.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 if (this.isMainFrame) {
@@ -294,17 +323,13 @@ class CoWatchCore {
     }
 
     enterTransitionMode(targetVideoId) {
-        if (!this.isTransitioning) console.log(`🛑 Co-Watch: Geçiş Modu (Mute) AKTİF.`);
+        if (!this.isTransitioning) console.log(`🛑 Co-Watch: Geçiş Modu AKTİF.`);
         this.isTransitioning = true;
         this.targetTransitionId = targetVideoId;
         if (this.globalNetworkGTI !== targetVideoId) this.globalNetworkGTI = null;
-
         if (this.transitionTimeout) clearTimeout(this.transitionTimeout);
         this.transitionTimeout = setTimeout(() => {
-            if (this.isTransitioning) {
-                this.isTransitioning = false;
-                this.targetTransitionId = null;
-            }
+            if (this.isTransitioning) { this.isTransitioning = false; this.targetTransitionId = null; }
         }, 8000);
     }
 
@@ -319,14 +344,36 @@ class CoWatchCore {
     checkTransitionState(handler) {
         if (!this.isTransitioning || !this.targetTransitionId) return;
         const data = handler.extractMetadata();
-        if (data.videoId === this.targetTransitionId && handler.video.currentTime > 0.1 && !handler.video.paused) {
-            this.exitTransitionMode();
-        }
+        if (data.videoId === this.targetTransitionId && handler.video.currentTime > 0.1 && !handler.video.paused) this.exitTransitionMode();
     }
 
     safeSendMessage(message, callback) {
         if (!chrome.runtime?.id) return;
         try { chrome.runtime.sendMessage(message, callback); } catch (e) {}
+    }
+
+    triggerReflow() {
+        // body genişlik değişikliği pencere boyutunu değiştirmediği için resize
+        // event'i kendiliğinden ateşlenmiyor; JS ile boyutlanan player'ları
+        // (Amazon/YouTube/DiziBox host'ları) yeniden ölçmeye zorluyoruz.
+        window.dispatchEvent(new Event('resize'));
+        setTimeout(() => window.dispatchEvent(new Event('resize')), 350); // CSS transition (0.3s) bitince tekrar
+    }
+
+    setFixedMode(enabled) {
+        const isYouTube = window.location.hostname.includes('youtube.com');
+        const isAmazon = window.location.hostname.includes('amazon') || window.location.hostname.includes('primevideo');
+        
+        if (isYouTube) {
+            document.documentElement.classList.toggle('cw-youtube-fixed-mode', enabled);
+            document.body.classList.toggle('cw-youtube-fixed-mode', enabled);
+        } else if (isAmazon) {
+            document.documentElement.classList.toggle('cw-amazon-fixed-mode', enabled);
+            document.body.classList.toggle('cw-amazon-fixed-mode', enabled);
+        } else {
+            document.documentElement.classList.toggle('cw-fixed-mode', enabled);
+            document.body.classList.toggle('cw-fixed-mode', enabled);
+        }
     }
 
     injectUI() {
@@ -337,47 +384,371 @@ class CoWatchCore {
 
         this.shadow.innerHTML = `
         <style>
-            :host { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; --bg-glass: rgba(18, 18, 18, 0.85); --border-glass: rgba(255, 255, 255, 0.08); --text-main: #f0f0f0; --accent: #ff9900; --danger: #ff4444; }
-            #cw-app { display: none; background: var(--bg-glass); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--border-glass); color: var(--text-main); flex-direction: column; overflow: hidden; z-index: 2147483647; box-shadow: -5px 0 30px rgba(0,0,0,0.5); position: fixed; }
-            .mode-compact { top: 20px; right: 20px; width: 340px; height: 500px; border-radius: 16px; }
-            .mode-interactive { top: 0; right: -360px; width: 340px; height: 100vh; border-radius: 20px 0 0 20px; border-right: none; transition: right 0.3s ease; }
-            .mode-interactive.show { right: 0; }
-            #cw-hover-trigger { position: fixed; top: 0; right: 0; width: 30px; height: 100vh; z-index: 2147483646; display: none; }
-            .mode-fixed { top: 0; right: 0; width: 340px; height: 100vh; border-radius: 0; border-left: 1px solid var(--border-glass); }
-            #cw-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: rgba(0,0,0,0.6); border-bottom: 1px solid var(--border-glass); }
+            :host {
+                font-family: 'Segoe UI', system-ui, sans-serif;
+                font-size: 14px;
+                --bg: rgba(14, 14, 16, 0.92);
+                --border: rgba(255,255,255,0.07);
+                --text: #e8e8e8;
+                --accent: #ff9900;
+                --danger: #ff4444;
+                --bubble-in: rgba(255,153,0,0.15);
+                --bubble-out: rgba(40,40,44,0.9);
+                --scrollbar: rgba(255,255,255,0.08);
+            }
+
+            * { box-sizing: border-box; }
+
+            #cw-app {
+                display: none;
+                background: var(--bg);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
+                border: 1px solid var(--border);
+                color: var(--text);
+                flex-direction: column;
+                overflow: hidden;
+                z-index: 2147483647;
+                box-shadow: -4px 0 32px rgba(0,0,0,0.6);
+                position: fixed;
+            }
+
+            /* COMPACT MODE */
+            .mode-compact {
+                top: 20px; right: 20px;
+                width: 340px; height: 500px;
+                border-radius: 16px;
+            }
             .mode-compact #cw-header { cursor: grab; }
             .mode-compact #cw-header:active { cursor: grabbing; }
-            .cw-tabs { display: flex; gap: 15px; }
-            .cw-tabs button { background: none; border: none; color: #777; cursor: pointer; padding: 0 0 5px 0; font-weight: bold; font-size: 15px; }
+
+            /* INTERACTIVE MODE */
+            .mode-interactive {
+                top: 0; right: 0;
+                width: 340px; height: 100vh;
+                border-radius: 16px 0 0 16px;
+                border-right: none;
+                transform: translateX(100%);
+                opacity: 0;
+                transition: transform 0.3s cubic-bezier(0.4,0,0.2,1), opacity 0.3s ease;
+                pointer-events: none;
+            }
+            .mode-interactive.show {
+                transform: translateX(0);
+                opacity: 1;
+                pointer-events: all;
+            }
+            #cw-edge-trigger {
+                position: fixed; top: 0; right: 0;
+                width: 18px; height: 100vh;
+                z-index: 2147483646;
+                display: none;
+                cursor: pointer;
+            }
+            #cw-edge-bar {
+                position: absolute;
+                right: 0; top: 50%;
+                transform: translateY(-50%);
+                width: 3px; height: 60px;
+                background: rgba(255,153,0,0.3);
+                border-radius: 3px 0 0 3px;
+                transition: width 0.2s, background 0.2s, height 0.2s;
+            }
+            #cw-edge-trigger:hover #cw-edge-bar {
+                width: 5px;
+                background: rgba(255,153,0,0.7);
+            }
+            #cw-edge-bar.notify {
+                animation: cw-bar-pulse 0.45s ease 3;
+            }
+            @keyframes cw-bar-pulse {
+                0%   { width: 3px; height: 60px;  background: rgba(255,153,0,0.3); }
+                50%  { width: 8px; height: 110px; background: rgba(255,153,0,1); }
+                100% { width: 3px; height: 60px;  background: rgba(255,153,0,0.3); }
+            }
+
+            /* FIXED MODE */
+            .mode-fixed {
+                top: 0; right: 0;
+                width: 340px; height: 100vh;
+                border-radius: 0;
+                border-left: 1px solid var(--border);
+            }
+
+            /* HEADER */
+            #cw-header {
+                display: flex; justify-content: space-between; align-items: center;
+                padding: 11px 14px;
+                background: rgba(0,0,0,0.5);
+                border-bottom: 1px solid var(--border);
+                flex-shrink: 0;
+            }
+            .cw-tabs { display: flex; gap: 12px; }
+            .cw-tabs button {
+                background: none; border: none; color: #555;
+                cursor: pointer; padding: 0 0 4px 0;
+                font-weight: bold; font-size: 15px;
+                transition: color 0.2s;
+            }
             .cw-tabs button.active { color: var(--accent); border-bottom: 2px solid var(--accent); }
-            .copy-badge { background: rgba(255,153,0,0.1); border: 1px dashed var(--accent); color: var(--accent); padding: 4px 8px; border-radius: 6px; font-size: 11px; cursor: pointer; font-family: monospace; }
-            .header-controls button { background: none; border: none; cursor: pointer; font-size: 16px; padding: 5px; color: white; opacity: 0.7; }
-            #cw-body { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
-            .cw-view { display: none; flex: 1; flex-direction: column; padding: 15px; overflow-y: auto; }
+            .copy-badge {
+                background: rgba(255,153,0,0.08);
+                border: 1px dashed rgba(255,153,0,0.5);
+                color: var(--accent);
+                padding: 3px 8px; border-radius: 6px;
+                font-size: 11px; cursor: pointer; font-family: monospace;
+                transition: background 0.2s;
+            }
+            .copy-badge:hover { background: rgba(255,153,0,0.15); }
+            .header-controls { display: flex; align-items: center; gap: 6px; }
+            .header-controls button {
+                background: none; border: none; cursor: pointer;
+                font-size: 15px; padding: 4px; color: #666;
+                transition: color 0.2s;
+            }
+            .header-controls button:hover { color: #ccc; }
+
+            /* BODY */
+            #cw-body { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+            .cw-view { display: none; flex: 1; flex-direction: column; overflow: hidden; }
             .cw-view.active-view { display: flex; }
-            #cw-chat-history { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 5px; }
-            .cw-message { display: flex; flex-direction: column; max-width: 85%; }
-            .cw-nick { font-size: 10px; color: #888; margin-bottom: 2px; }
-            .cw-bubble { padding: 8px 12px; word-break: break-word; line-height: 1.4; }
-            .msg-self { align-self: flex-end; }
-            .msg-self .cw-bubble { background: var(--accent); color: #000; border-radius: 14px 14px 0 14px; font-weight: 500; }
+
+            /* CHAT VIEW */
+            #view-chat { padding: 10px 0 0 0; }
+            #cw-chat-history {
+                flex: 1;
+                overflow-y: auto;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                padding: 4px 14px 8px 14px;
+                scrollbar-width: thin;
+                scrollbar-color: var(--scrollbar) transparent;
+            }
+            #cw-chat-history::-webkit-scrollbar { width: 4px; }
+            #cw-chat-history::-webkit-scrollbar-track { background: transparent; }
+            #cw-chat-history::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
+            #cw-chat-history::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+
+            .cw-message { display: flex; flex-direction: column; max-width: 82%; }
+            .cw-nick { font-size: 10px; color: #555; margin-bottom: 3px; }
+            .cw-bubble { padding: 8px 12px; word-break: break-word; line-height: 1.45; font-size: 13px; }
+
+            /* Gelen mesaj: renkli (accent) */
             .msg-other { align-self: flex-start; }
-            .msg-other .cw-bubble { background: rgba(255,255,255,0.1); color: #fff; border-radius: 0 14px 14px 14px; }
-            .sys-msg { color: var(--accent); font-style: italic; font-size: 12px; text-align: center; margin: 5px 0; line-height: 1.5; }
-            .sys-err { color: var(--danger); font-weight: bold; font-size: 11px; text-align: center; }
-            #cw-input-area { display: flex; gap: 8px; position: relative; }
-            #cw-chat-input { flex: 1; background: rgba(0,0,0,0.4); border: 1px solid #444; color: white; padding: 10px; border-radius: 8px; outline: none; }
-            #btn-send { background: var(--accent); color: #000; font-weight: bold; border: none; border-radius: 8px; padding: 10px; cursor: pointer; }
-            .user-li { display: flex; justify-content: space-between; align-items: center; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px; margin-bottom: 8px; }
-            .time-badge { background: rgba(255,153,0,0.2); color: var(--accent); padding: 4px 8px; border-radius: 12px; font-size: 11px; }
-            .mod-btn-group { display: flex; gap: 5px; margin-bottom: 20px; }
-            .mod-btn { flex: 1; background: #222; border: 1px solid #444; color: white; padding: 8px; border-radius: 6px; cursor: pointer; font-size: 12px; }
-            .mod-btn.active { background: var(--accent); color: #000; font-weight: bold; }
-            #cw-manual-bar-container { background: rgba(0,0,0,0.8); padding: 12px 15px; border-top: 1px solid var(--border-glass); }
-            .controls-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px;}
-            .ctrl-btn { background: rgba(255,255,255,0.1); color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; }
-            #cw-progress-bg { flex: 1; height: 8px; background: #444; border-radius: 4px; position: relative; cursor: pointer; }
-            #cw-progress-fill { height: 100%; background: var(--accent); width: 0%; border-radius: 4px; }
+            .msg-other .cw-nick { text-align: left; }
+            .msg-other .cw-bubble {
+                background: var(--bubble-in);
+                color: #f0d5a0;
+                border-radius: 0 12px 12px 12px;
+                border: 1px solid rgba(255,153,0,0.12);
+            }
+
+            /* Giden mesaj: gri */
+            .msg-self { align-self: flex-end; }
+            .msg-self .cw-nick { text-align: right; }
+            .msg-self .cw-bubble {
+                background: var(--bubble-out);
+                color: #bbb;
+                border-radius: 12px 12px 0 12px;
+                border: 1px solid rgba(255,255,255,0.05);
+            }
+
+            .sys-msg { color: rgba(255,153,0,0.7); font-style: italic; font-size: 11px; text-align: center; margin: 4px 0; line-height: 1.5; }
+            .sys-err { color: var(--danger); font-size: 11px; text-align: center; }
+
+            /* TYPING INDICATOR */
+            #cw-typing {
+                min-height: 20px;
+                padding: 2px 14px;
+                font-size: 11px;
+                color: #666;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                flex-shrink: 0;
+            }
+            .cw-typing-dots { display: flex; gap: 3px; align-items: center; }
+            .cw-typing-dots span {
+                width: 5px; height: 5px;
+                background: #ff9900;
+                border-radius: 50%;
+                opacity: 0.4;
+                animation: cw-dot-bounce 1.2s infinite;
+            }
+            .cw-typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+            .cw-typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+            @keyframes cw-dot-bounce {
+                0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+                40% { transform: translateY(-4px); opacity: 1; }
+            }
+
+            /* INPUT AREA */
+            #cw-input-area {
+                display: flex; gap: 6px;
+                padding: 8px 12px 10px 12px;
+                border-top: 1px solid var(--border);
+                flex-shrink: 0;
+                background: rgba(0,0,0,0.2);
+            }
+            #cw-chat-input {
+                flex: 1;
+                background: rgba(255,255,255,0.04);
+                border: 1px solid rgba(255,255,255,0.08);
+                color: white; padding: 9px 12px;
+                border-radius: 10px; outline: none;
+                font-size: 13px;
+                transition: border-color 0.2s;
+            }
+            #cw-chat-input:focus { border-color: rgba(255,153,0,0.4); }
+            #btn-emoji {
+                background: rgba(255,255,255,0.05);
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 10px; padding: 0 10px;
+                cursor: pointer; font-size: 16px;
+                color: #888; transition: all 0.2s;
+                flex-shrink: 0;
+            }
+            #btn-emoji:hover { background: rgba(255,153,0,0.1); color: var(--accent); }
+            #btn-send {
+                background: var(--accent); color: #000;
+                font-weight: bold; border: none;
+                border-radius: 10px; padding: 0 14px;
+                cursor: pointer; font-size: 16px;
+                flex-shrink: 0;
+                transition: background 0.2s;
+            }
+            #btn-send:hover { background: #e68a00; }
+
+            /* EMOJI PICKER */
+            #cw-emoji-picker {
+                display: none;
+                position: absolute;
+                bottom: 60px; right: 12px;
+                background: rgba(20,20,22,0.97);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                padding: 10px;
+                z-index: 10;
+                width: 260px;
+                flex-wrap: wrap;
+                gap: 4px;
+                backdrop-filter: blur(12px);
+            }
+            #cw-emoji-picker.open { display: flex; }
+            #cw-emoji-picker span {
+                font-size: 20px; cursor: pointer;
+                padding: 4px; border-radius: 6px;
+                transition: background 0.15s;
+                line-height: 1;
+            }
+            #cw-emoji-picker span:hover { background: rgba(255,153,0,0.15); }
+
+            /* USERS VIEW */
+            #view-users { padding: 12px; overflow-y: auto; }
+            .user-li {
+                display: flex; justify-content: space-between; align-items: center;
+                padding: 10px 12px;
+                background: rgba(255,255,255,0.02);
+                border: 1px solid var(--border);
+                border-radius: 10px; margin-bottom: 8px;
+            }
+            .time-badge {
+                background: rgba(255,153,0,0.12);
+                color: var(--accent);
+                padding: 3px 8px; border-radius: 10px; font-size: 11px;
+            }
+
+            /* SETTINGS VIEW */
+            #view-settings {
+                padding: 14px;
+                overflow-y: auto;
+                scrollbar-width: thin;
+                scrollbar-color: var(--scrollbar) transparent;
+            }
+            .settings-section { margin-bottom: 20px; }
+            .settings-label {
+                font-size: 10px; color: #555;
+                text-transform: uppercase; letter-spacing: 1px;
+                margin-bottom: 8px;
+            }
+            .mod-btn-group { display: flex; gap: 5px; }
+            .mod-btn {
+                flex: 1; background: rgba(255,255,255,0.03);
+                border: 1px solid rgba(255,255,255,0.08);
+                color: #888; padding: 8px 4px;
+                border-radius: 8px; cursor: pointer; font-size: 11px;
+                transition: all 0.2s;
+            }
+            .mod-btn:hover { border-color: rgba(255,153,0,0.3); color: #ccc; }
+            .mod-btn.active {
+                background: rgba(255,153,0,0.12);
+                border-color: rgba(255,153,0,0.4);
+                color: var(--accent); font-weight: bold;
+            }
+            .cw-switch-row {
+                display: flex; justify-content: space-between; align-items: center;
+                padding: 10px 0;
+                border-bottom: 1px solid rgba(255,255,255,0.04);
+            }
+            .cw-switch-row:last-child { border-bottom: none; }
+            .cw-switch-label { font-size: 13px; color: #bbb; }
+            .cw-switch-sub { font-size: 10px; color: #555; margin-top: 2px; }
+            .cw-switch {
+                position: relative; width: 38px; height: 20px;
+                flex-shrink: 0;
+            }
+            .cw-switch input { opacity: 0; width: 0; height: 0; }
+            .cw-switch-slider {
+                position: absolute; cursor: pointer;
+                top: 0; left: 0; right: 0; bottom: 0;
+                background: #333; border-radius: 20px;
+                transition: 0.25s;
+            }
+            .cw-switch-slider::before {
+                content: ''; position: absolute;
+                height: 14px; width: 14px;
+                left: 3px; bottom: 3px;
+                background: #666; border-radius: 50%;
+                transition: 0.25s;
+            }
+            .cw-switch input:checked + .cw-switch-slider { background: rgba(255,153,0,0.3); }
+            .cw-switch input:checked + .cw-switch-slider::before { transform: translateX(18px); background: var(--accent); }
+
+            /* PROGRESS BAR */
+            #cw-manual-bar-container {
+                background: rgba(0,0,0,0.7);
+                padding: 10px 14px 12px 14px;
+                border-top: 1px solid var(--border);
+                flex-shrink: 0;
+            }
+            #cw-video-title {
+                font-size: 11px; color: #666;
+                white-space: nowrap; overflow: hidden;
+                text-overflow: ellipsis; margin-bottom: 8px;
+            }
+            .controls-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+            .ctrl-btn {
+                background: rgba(255,255,255,0.06);
+                color: #aaa; border: none;
+                border-radius: 6px; padding: 5px 8px;
+                cursor: pointer; font-size: 12px;
+                white-space: nowrap;
+                transition: all 0.2s;
+            }
+            .ctrl-btn:hover { background: rgba(255,153,0,0.15); color: var(--accent); }
+            #cw-progress-bg {
+                flex: 1; height: 6px;
+                background: rgba(255,255,255,0.1);
+                border-radius: 4px; cursor: pointer;
+                position: relative;
+            }
+            #cw-progress-fill {
+                height: 100%; background: var(--accent);
+                width: 0%; border-radius: 4px;
+                transition: width 0.5s linear;
+            }
+            #cw-time-display { font-size: 10px; color: #555; text-align: center; margin-top: 5px; }
         </style>
 
         <div id="cw-app" class="mode-compact">
@@ -389,25 +760,64 @@ class CoWatchCore {
                 </div>
                 <div class="header-controls">
                     <span id="cw-room-id" class="copy-badge">Bekleniyor</span>
-                    <button id="btn-leave-ui">❌</button>
+                    <button id="btn-leave-ui" title="Odadan çık">✕</button>
                 </div>
             </div>
+
             <div id="cw-body">
                 <div id="view-chat" class="cw-view active-view">
                     <div id="cw-chat-history"></div>
+                    <div id="cw-typing"><span id="cw-typing-text"></span></div>
+                    <div style="position:relative;">
+                        <div id="cw-emoji-picker">
+                            ${['😀','😂','😍','🥹','😎','🤔','😴','😭','🤣','❤️','🔥','👏','🎉','💀','🙏','👀','🤯','😤','🥶','🍿','⏸️','▶️','🎬','💬','🎭','✨','💯','🤌'].map(e => `<span>${e}</span>`).join('')}
+                        </div>
+                    </div>
                     <div id="cw-input-area">
                         <input type="text" id="cw-chat-input" placeholder="Mesaj gönder...">
+                        <button id="btn-emoji" title="Emoji">😊</button>
                         <button id="btn-send">➤</button>
                     </div>
                 </div>
-                <div id="view-users" class="cw-view"><div id="cw-user-list"></div></div>
+
+                <div id="view-users" class="cw-view">
+                    <div id="cw-user-list"></div>
+                </div>
+
                 <div id="view-settings" class="cw-view">
-                    <div class="mod-btn-group">
-                        <button class="mod-btn active" data-mode="mode-compact">📱 Kompakt</button>
-                        <button class="mod-btn" data-mode="mode-interactive">👉 İnteraktif</button>
-                        <button class="mod-btn" data-mode="mode-fixed">📌 Sabit</button>
+                    <div class="settings-section">
+                        <div class="settings-label">Görünüm Modu</div>
+                        <div class="mod-btn-group">
+                            <button class="mod-btn active" data-mode="mode-compact">📱 Kompakt</button>
+                            <button class="mod-btn" data-mode="mode-interactive">👉 İnteraktif</button>
+                            <button class="mod-btn" data-mode="mode-fixed">📌 Sabit</button>
+                        </div>
+                    </div>
+                    <div class="settings-section">
+                        <div class="settings-label">Seçenekler</div>
+                        <div class="cw-switch-row">
+                            <div>
+                                <div class="cw-switch-label">Video İlerleme Çubuğu</div>
+                                <div class="cw-switch-sub">Alttaki zaman çubuğunu göster</div>
+                            </div>
+                            <label class="cw-switch">
+                                <input type="checkbox" id="sw-progress" checked>
+                                <span class="cw-switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="cw-switch-row" id="row-redirect" style="display:none;">
+                            <div>
+                                <div class="cw-switch-label">URL Yönlendirme</div>
+                                <div class="cw-switch-sub">Odanın videosuna otomatik git (Admin)</div>
+                            </div>
+                            <label class="cw-switch">
+                                <input type="checkbox" id="sw-redirect" checked>
+                                <span class="cw-switch-slider"></span>
+                            </label>
+                        </div>
                     </div>
                 </div>
+
                 <div id="cw-manual-bar-container">
                     <div id="cw-video-title">Video aranıyor...</div>
                     <div class="controls-row">
@@ -416,11 +826,11 @@ class CoWatchCore {
                         <div id="cw-progress-bg"><div id="cw-progress-fill"></div></div>
                         <button id="btn-forward" class="ctrl-btn">+10s ⏭</button>
                     </div>
-                    <div style="text-align:center; margin-top:5px;"><span id="cw-time-display" style="font-size:10px; color:#aaa;">00:00 / 00:00</span></div>
+                    <div id="cw-time-display">00:00 / 00:00</div>
                 </div>
             </div>
         </div>
-        <div id="cw-hover-trigger"></div>
+        <div id="cw-edge-trigger"><div id="cw-edge-bar"></div></div>
         `;
         this.bindUIEvents();
         this.checkAutoJoin();
@@ -430,12 +840,22 @@ class CoWatchCore {
         const app = this.shadow.getElementById('cw-app');
         const header = this.shadow.getElementById('cw-header');
         const chatInput = this.shadow.getElementById('cw-chat-input');
+        const edgeTrigger = this.shadow.getElementById('cw-edge-trigger');
+        const emojiPicker = this.shadow.getElementById('cw-emoji-picker');
 
+        // Keyboard event isolation
         const blockSocks = (e) => e.stopPropagation();
         chatInput.addEventListener('keydown', blockSocks);
         chatInput.addEventListener('keypress', blockSocks);
         chatInput.addEventListener('keyup', blockSocks);
 
+        // Typing indicator
+        chatInput.addEventListener('input', () => {
+            if (!this.currentRoomId) return;
+            this.safeSendMessage({ action: "OUT_TYPING", data: { roomId: this.currentRoomId } });
+        });
+
+        // Tabs
         ['chat', 'users', 'settings'].forEach(tab => {
             this.shadow.getElementById(`tab-${tab}`).addEventListener('click', (e) => {
                 this.shadow.querySelectorAll('.cw-tabs button').forEach(b => b.classList.remove('active'));
@@ -445,6 +865,7 @@ class CoWatchCore {
             });
         });
 
+        // Compact drag
         let isDragging = false, offsetX, offsetY;
         header.addEventListener('mousedown', (e) => {
             if (!app.classList.contains('mode-compact') || e.target.tagName.toLowerCase() === 'button') return;
@@ -460,44 +881,98 @@ class CoWatchCore {
         });
         document.addEventListener('mouseup', () => { isDragging = false; document.body.style.userSelect = ''; });
 
+        // Mode buttons
         this.shadow.querySelectorAll('.mod-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 this.shadow.querySelectorAll('.mod-btn').forEach(b => b.classList.remove('active'));
                 e.target.classList.add('active');
                 const newMode = e.target.getAttribute('data-mode');
+
+                // Clean up previous mode
+                app.classList.remove('show');
+                this.setFixedMode(false);
+                edgeTrigger.style.display = 'none';
+                app.style.left = '';
+                app.style.top = '';
+
                 app.className = newMode;
-                this.shadow.getElementById('cw-hover-trigger').style.display = (newMode === 'mode-interactive') ? 'block' : 'none';
+
+                if (newMode === 'mode-interactive') {
+                    edgeTrigger.style.display = 'block';
+                } else if (newMode === 'mode-fixed') {
+                    this.setFixedMode(true);
+                }
+
+                this.triggerReflow();
             });
         });
 
-        this.shadow.getElementById('cw-hover-trigger').addEventListener('mouseenter', () => {
+        // Interactive mode hover trigger
+        edgeTrigger.addEventListener('mouseenter', () => {
             if (app.classList.contains('mode-interactive')) app.classList.add('show');
         });
         app.addEventListener('mouseleave', () => {
             if (app.classList.contains('mode-interactive')) app.classList.remove('show');
         });
 
+        // Leave room
         this.shadow.getElementById('btn-leave-ui').onclick = () => {
             if (confirm("Odadan tamamen ayrılmak istediğinize emin misiniz?")) {
                 chrome.storage.local.remove(['savedRoomId']);
                 app.style.display = 'none';
+                this.setFixedMode(false);
+                this.triggerReflow();
                 if (this.currentRoomId) this.safeSendMessage({ action: "OUT_LEAVE_ROOM", data: { roomId: this.currentRoomId } });
                 this.currentRoomId = null;
                 if (this.activeHandler) this.activeHandler.roomId = null;
             }
         };
 
+        // Send message
         const sendMsg = () => {
-            if (chatInput.value.trim() && this.currentRoomId) {
-                this.safeSendMessage({ action: "OUT_SEND_MESSAGE", data: { roomId: this.currentRoomId, message: chatInput.value } });
+            const text = chatInput.value.trim();
+            if (text && this.currentRoomId) {
+                this.safeSendMessage({ action: "OUT_SEND_MESSAGE", data: { roomId: this.currentRoomId, message: text } });
                 chatInput.value = '';
+                emojiPicker.classList.remove('open');
             }
         };
         this.shadow.getElementById('btn-send').onclick = sendMsg;
         chatInput.onkeypress = (e) => { if (e.key === 'Enter') { e.stopPropagation(); sendMsg(); } };
 
+        // Emoji picker
+        this.shadow.getElementById('btn-emoji').addEventListener('click', (e) => {
+            e.stopPropagation();
+            emojiPicker.classList.toggle('open');
+        });
+        emojiPicker.addEventListener('click', (e) => {
+            if (e.target.tagName === 'SPAN') {
+                chatInput.value += e.target.textContent;
+                chatInput.focus();
+                emojiPicker.classList.remove('open');
+            }
+        });
+        this.shadow.addEventListener('click', (e) => {
+            if (!emojiPicker.contains(e.target) && e.target.id !== 'btn-emoji') {
+                emojiPicker.classList.remove('open');
+            }
+        });
+
+        // Progress bar switch
+        this.shadow.getElementById('sw-progress').addEventListener('change', (e) => {
+            this.showProgressBar = e.target.checked;
+            this.shadow.getElementById('cw-manual-bar-container').style.display = e.target.checked ? 'block' : 'none';
+        });
+
+        // Redirect switch (admin only)
+        this.shadow.getElementById('sw-redirect').addEventListener('change', (e) => {
+            this.redirectEnabled = e.target.checked;
+        });
+
+        // Video controls
         this.shadow.getElementById('btn-playpause').onclick = () => {
-            if (this.activeHandler && this.activeHandler.video) this.activeHandler.video.paused ? this.activeHandler.video.play() : this.activeHandler.video.pause();
+            if (this.activeHandler && this.activeHandler.video)
+                this.activeHandler.video.paused ? this.activeHandler.video.play() : this.activeHandler.video.pause();
         };
         this.shadow.getElementById('btn-rewind').onclick = () => { if (this.activeHandler) this.activeHandler.video.currentTime -= 10; };
         this.shadow.getElementById('btn-forward').onclick = () => { if (this.activeHandler) this.activeHandler.video.currentTime += 10; };
@@ -508,7 +983,7 @@ class CoWatchCore {
             if (res.savedRoomId && res.savedNickname) {
                 this.safeSendMessage({ action: "OUT_JOIN_ROOM", data: { roomId: res.savedRoomId, nickname: res.savedNickname } }, (response) => {
                     if (response && response.success) {
-                        this.openRoom(res.savedRoomId, res.savedNickname, response);
+                        this.openRoom(res.savedRoomId, res.savedNickname, response, /* isReconnect */ true);
                     } else {
                         chrome.storage.local.remove(['savedRoomId']);
                     }
@@ -521,11 +996,10 @@ class CoWatchCore {
         const trackedVideos = new WeakSet();
         const pendingAttach = new WeakMap();
 
-        const isDisziboxPlatform = () => window.location.href.match(/dizibox|vidmoly|upstream|molystream/i);
+        const isDisziboxPlatform = () => window.location.href.match(/dizibox|vidmoly|upstream|molystream|fullhdfilmizlesene|rapidvid/i);
 
         const attachHandler = (video) => {
             if (this.activeHandler && this.activeHandler.video === video && this.activeHandler.trackedSrc === video.src) return;
-
             if (this.activeHandler) this.activeHandler.destroy();
             this.isAdPlaying = false;
 
@@ -542,13 +1016,10 @@ class CoWatchCore {
         const tryAttachHandler = (video) => {
             if (this.activeHandler && this.activeHandler.video === video && this.activeHandler.trackedSrc === video.src) return;
 
-            // Dizibox'ta reklam tespiti: kısa süreli videonun bitmesini bekle
             if (isDisziboxPlatform() && !isNaN(video.duration) && video.duration > 0 && video.duration < 60) {
-                // Bu bir reklam olabilir — bitince tekrar dene
                 if (pendingAttach.has(video)) clearTimeout(pendingAttach.get(video));
                 const t = setTimeout(() => {
                     pendingAttach.delete(video);
-                    // Timeout dolduğunda duration hâlâ kısaysa reklam devam ediyor, beklemeye devam et
                     if (!isNaN(video.duration) && video.duration < 60) return;
                     attachHandler(video);
                 }, (video.duration - video.currentTime + 1) * 1000);
@@ -556,24 +1027,16 @@ class CoWatchCore {
                 return;
             }
 
-            // Dizibox değilse veya duration yeterliyse direkt bağla
-            if (pendingAttach.has(video)) {
-                clearTimeout(pendingAttach.get(video));
-                pendingAttach.delete(video);
-            }
+            if (pendingAttach.has(video)) { clearTimeout(pendingAttach.get(video)); pendingAttach.delete(video); }
             attachHandler(video);
         };
 
         const watchVideo = (video) => {
             if (trackedVideos.has(video)) return;
             trackedVideos.add(video);
-
             video.addEventListener('loadedmetadata', () => tryAttachHandler(video));
             video.addEventListener('durationchange', () => tryAttachHandler(video));
-
-            if (!isNaN(video.duration) && video.duration > 0 && video.offsetWidth > 50) {
-                tryAttachHandler(video);
-            }
+            if (!isNaN(video.duration) && video.duration > 0 && video.offsetWidth > 50) tryAttachHandler(video);
         };
 
         const observer = new MutationObserver(() => {
@@ -607,10 +1070,7 @@ class CoWatchCore {
         if (!this.activeHandler) return;
         if (cmd.action === 'pause') { this.activeHandler.executeCommand(cmd); return; }
         const currentVideoId = this.activeHandler.extractMetadata().videoId;
-        if (cmd.videoId && currentVideoId !== cmd.videoId) {
-            this.pendingCommand = cmd;
-            return;
-        }
+        if (cmd.videoId && currentVideoId !== cmd.videoId) { this.pendingCommand = cmd; return; }
         this.activeHandler.executeCommand(cmd);
     }
 
@@ -645,10 +1105,37 @@ class CoWatchCore {
         } else if (type === "error") {
             history.innerHTML += `<div class="sys-err">${text}</div>`;
         } else {
-            const alignmentClass = (senderNick === this.currentUser.nickname) ? 'msg-self' : 'msg-other';
-            history.innerHTML += `<div class="cw-message ${alignmentClass}"><span class="cw-nick">${senderNick}</span><div class="cw-bubble">${text}</div></div>`;
+            const isSelf = (senderNick === this.currentUser.nickname);
+            const cls = isSelf ? 'msg-self' : 'msg-other';
+            history.innerHTML += `<div class="cw-message ${cls}"><span class="cw-nick">${senderNick}</span><div class="cw-bubble">${text}</div></div>`;
+
+            // Interactive mode: pulse edge bar on incoming message
+            if (!isSelf) {
+                const app = this.shadow.getElementById('cw-app');
+                if (app.classList.contains('mode-interactive') && !app.classList.contains('show')) {
+                    const bar = this.shadow.getElementById('cw-edge-bar');
+                    if (bar) {
+                        bar.classList.remove('notify');
+                        void bar.offsetWidth;
+                        bar.classList.add('notify');
+                        bar.addEventListener('animationend', () => bar.classList.remove('notify'), { once: true });
+                    }
+                }
+            }
         }
         history.scrollTop = history.scrollHeight;
+    }
+
+    showTyping(nickname) {
+        if (!this.shadow) return;
+        const typingText = this.shadow.getElementById('cw-typing-text');
+        const typingEl = this.shadow.getElementById('cw-typing');
+        typingEl.innerHTML = `<div class="cw-typing-dots"><span></span><span></span><span></span></div><span>${nickname} yazıyor...</span>`;
+
+        if (this._typingClearTimeout) clearTimeout(this._typingClearTimeout);
+        this._typingClearTimeout = setTimeout(() => {
+            if (typingEl) typingEl.innerHTML = '';
+        }, 3000);
     }
 
     renderUserList(users) {
@@ -657,12 +1144,11 @@ class CoWatchCore {
         if (!listEl) return;
         listEl.innerHTML = '';
         users.forEach(u => {
-            const timeFormatted = this.formatTime(u.lastTime);
-            listEl.innerHTML += `<div class="user-li"><span>${u.isBuffering ? '⏳' : '🟢'} ${u.nickname}</span><span class="time-badge" data-nick="${u.nickname}">${timeFormatted}</span></div>`;
+            listEl.innerHTML += `<div class="user-li"><span>${u.isBuffering ? '⏳' : '🟢'} ${u.nickname}</span><span class="time-badge" data-nick="${u.nickname}">${this.formatTime(u.lastTime)}</span></div>`;
         });
     }
 
-    openRoom(roomId, nickname, serverRes) {
+    openRoom(roomId, nickname, serverRes, isReconnect = false) {
         const app = this.shadow.getElementById('cw-app');
         app.style.display = 'flex';
         this.currentRoomId = roomId;
@@ -672,25 +1158,27 @@ class CoWatchCore {
         this.shadow.getElementById('cw-room-id').innerText = roomId;
         this.shadow.getElementById('cw-chat-history').innerHTML = '';
 
+        if (serverRes.role === 'admin' || serverRes.isAdmin) {
+            this.shadow.getElementById('row-redirect').style.display = 'flex';
+        }
+
         if (serverRes.chatHistory) serverRes.chatHistory.forEach(m => this.addMessage(m.nickname, m.text));
         this.renderUserList(serverRes.activeUsers || []);
-        if (serverRes.roomState) this.reconcileRoomVideo(serverRes.roomState);
+        if (!isReconnect && serverRes.roomState) this.reconcileRoomVideo(serverRes.roomState);
     }
 
     reconcileRoomVideo(roomState) {
         if (!roomState || !roomState.videoId) return;
         const myData = this.activeHandler ? this.activeHandler.extractMetadata() : { platform: detectPlatformFromUrl(window.location.href), videoId: null };
-
         if (myData.platform !== roomState.platform) {
             this.addMessage("Sistem", `Bu oda "${roomState.platform}" platformu için kuruldu.<br><br><a href="${roomState.url}" target="_blank" style="color:#ff9900; text-decoration:underline; font-weight:bold; cursor:pointer;">🎥 Doğru videoya gitmek için tıklayın</a>`, "system");
             return;
         }
-        if (myData.videoId !== roomState.videoId) {
-            this.navigateToRoomVideo(roomState.platform, roomState.videoId, roomState.url);
-        }
+        if (myData.videoId !== roomState.videoId) this.navigateToRoomVideo(roomState.platform, roomState.videoId, roomState.url);
     }
 
     navigateToRoomVideo(platform, videoId, url) {
+        if (!this.redirectEnabled) return;
         const currentUrl = window.location.href;
         if (videoId && !currentUrl.includes(videoId)) {
             if (platform === 'amazon') {
@@ -711,7 +1199,6 @@ class CoWatchCore {
             if (request.action === "AMAZON_AD_DETECTED") {
                 if (!this.isAdPlaying) {
                     this.isAdPlaying = true;
-                    console.log("📺 Co-Watch: Amazon Reklamı tespit edildi!");
                     if (this.currentRoomId) this.safeSendMessage({ action: "OUT_AD_PLAYING", data: { roomId: this.currentRoomId } });
                 }
             }
@@ -727,7 +1214,6 @@ class CoWatchCore {
                     let videoId = this.globalNetworkGTI || null;
                     const url = window.location.href;
                     let platform = detectPlatformFromUrl(url);
-
                     if (platform === "amazon") {
                         if (!videoId) {
                             const hydration = document.getElementById('dv-web-page-hydration-data');
@@ -774,13 +1260,20 @@ class CoWatchCore {
                     if (badge) badge.innerText = this.formatTime(t.lastTime);
                 });
             }
+            else if (request.action === "TYPING_INDICATOR") {
+                if (this.isMainFrame && request.nickname !== this.currentUser.nickname) {
+                    this.showTyping(request.nickname);
+                }
+            }
             else if (request.action === "REDIRECT_FORCE") {
-                if (this.isMainFrame) {
+                if (this.isMainFrame && this.redirectEnabled) {
                     this.navigateToRoomVideo(request.data.platform, request.data.videoId, request.data.url);
                 }
             }
             else if (request.action === "LEAVE_ROOM") {
                 if (this.isMainFrame && this.shadow) this.shadow.getElementById('cw-app').style.display = 'none';
+                this.setFixedMode(false);
+                this.triggerReflow();
                 this.currentRoomId = null;
                 if (this.activeHandler) this.activeHandler.roomId = null;
             }
@@ -792,7 +1285,7 @@ class CoWatchCore {
                         this.addMessage("Sistem", "Sohbetli tam ekrandan çıkıldı.", "system");
                     } else {
                         document.body.classList.add('cw-theater-mode');
-                        this.addMessage("Sistem", "Sohbetli tam ekrana geçildi. Çıkmak için ESC'ye veya tekrar Tam Ekran tuşuna basabilirsiniz.", "system");
+                        this.addMessage("Sistem", "Sohbetli tam ekrana geçildi. Çıkmak için ESC'ye basabilirsiniz.", "system");
                         if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
                     }
                 }
