@@ -1,6 +1,6 @@
 importScripts('socket.io.js');
 
-const SERVER_URL = "http://https://co-watch-ogdz.onrender.com";
+const SERVER_URL = "http://localhost:3000";
 let socket = null;
 
 // MV3 Service Worker'ı hayatta tutmak için (Keep-Alive) Ping
@@ -16,8 +16,9 @@ function initSocket() {
 
     socket = io(SERVER_URL, { 
         transports: ['websocket'],
-        upgrade: true, // Upgrade işlemine izin verin
-        reconnection: true, // Bağlantı koparsa otomatik tekrar bağlanması için
+        secure: true,
+        upgrade: true,
+        reconnection: true,
         reconnectionAttempts: Infinity
     });
 
@@ -52,6 +53,10 @@ function initSocket() {
         broadcastToContentScript({ action: "SYSTEM_ERROR", msg });
     });
 
+    socket.on('typingIndicator', (data) => {
+        broadcastToContentScript({ action: "TYPING_INDICATOR", nickname: data.nickname });
+    });
+
     socket.on('userListUpdate', (users) => {
         broadcastToContentScript({ action: "USER_LIST_UPDATE", users });
     });
@@ -76,7 +81,7 @@ function initSocket() {
 function broadcastToContentScript(message) {
     chrome.tabs.query({}, (tabs) => {
         tabs.forEach(tab => {
-            if (tab.url && tab.url.match(/amazon|primevideo|youtube|dizibox/i)) {
+            if (tab.url && tab.url.match(/amazon|primevideo|youtube|dizibox|fullhdfilmizlesene|rapidvid/i)) {
                 chrome.tabs.sendMessage(tab.id, message, () => {
                     if (chrome.runtime.lastError) { /* Pasif sekmeleri yoksay */ }
                 });
@@ -111,6 +116,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     else if (request.action === "OUT_SEND_MESSAGE") {
         socket.emit('sendMessage', request.data);
     }
+    else if (request.action === "OUT_TYPING") {
+        socket.emit('typing', request.data);
+    }
     else if (request.action === "OUT_LEAVE_ROOM") {
         socket.emit('leaveRoom', request.data);
     }
@@ -138,16 +146,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // ============================================================================
-// NETWORK SNIFFER (AĞ DİNLEYİCİSİ)
+// ÜST SAYFA URL TAKİBİ (SPA navigasyonlarında iframe'lerin haberdar olması için)
 // ============================================================================
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.url && tab.url && tab.url.match(/dizibox|vidmoly|upstream|molystream/i)) {
+    if (changeInfo.url && tab.url && tab.url.match(/dizibox|vidmoly|upstream|molystream|fullhdfilmizlesene|rapidvid/i)) {
         chrome.tabs.sendMessage(tabId, {
             action: "TOP_URL_CHANGED",
             url: changeInfo.url
         }).catch(() => {});
     }
 });
+
+// ============================================================================
+// NETWORK SNIFFER (AĞ DİNLEYİCİSİ)
+// ============================================================================
 chrome.webRequest.onBeforeRequest.addListener(
     (details) => {
         const url = details.url;
