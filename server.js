@@ -312,11 +312,11 @@ io.on('connection', (socket) => {
         
         const nick = room.users[socket.id]?.nickname || "Biri";
         if (data.action === 'pause') {
-            io.to(data.roomId).emit('systemMessage', { type: 'system', text: `⏸ ${nick} videoyu durdurdu.` });
-        } else if (data.action === 'play') {
-            io.to(data.roomId).emit('systemMessage', { type: 'system', text: `▶ ${nick} videoyu başlattı.` });
-            Object.values(room.users).forEach(u => u.corrections = 0);
-        }
+    io.to(data.roomId).emit('systemMessage', { type: 'system', text: `⏸ ${nick} videoyu durdurdu.`, autoHide: true });
+} else if (data.action === 'play') {
+    io.to(data.roomId).emit('systemMessage', { type: 'system', text: `▶ ${nick} videoyu başlattı.`, autoHide: true });
+    Object.values(room.users).forEach(u => u.corrections = 0);
+}
     });
 
     socket.on('bufferState', (data) => {
@@ -358,14 +358,19 @@ io.on('connection', (socket) => {
     });
 
     socket.on('sendMessage', (data) => {
-        const room = rooms[data.roomId];
-        if (room) {
-            const messageObj = { senderId: socket.id, nickname: room.users[socket.id]?.nickname || "Misafir", text: data.message };
-            room.chatHistory.push(messageObj);
-            if (room.chatHistory.length > room.settings.maxMessages) room.chatHistory.shift();
-            io.to(data.roomId).emit('newMessage', messageObj);
-        }
-    });
+    const room = rooms[data.roomId];
+    if (room) {
+        const messageObj = { 
+            senderId: socket.id, 
+            nickname: room.users[socket.id]?.nickname || "Misafir", 
+            text: data.message,
+            replyTo: data.replyTo || null // Yanıt objesini history'ye kaydet ve yolla
+        };
+        room.chatHistory.push(messageObj);
+        if (room.chatHistory.length > room.settings.maxMessages) room.chatHistory.shift();
+        io.to(data.roomId).emit('newMessage', messageObj);
+    }
+});
 
     socket.on('typing', (data) => {
         const room = rooms[data.roomId];
