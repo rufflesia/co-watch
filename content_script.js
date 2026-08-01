@@ -193,6 +193,41 @@ class DiziboxHandler extends VideoHandler {
     }
 }
 
+// YENİ: Bilinmeyen sitelerde çalışacak Evrensel (Generic) Handler
+class GenericHandler extends VideoHandler {
+    constructor(videoElement, roomId, uiController) {
+        super(videoElement, roomId, uiController);
+        
+        // Videoya tıklandığında oynat/duraklat yapacak olay (event)
+        this._onVideoClick = (e) => {
+            if (this.video.paused) {
+                this.video.play().catch(() => {});
+            } else {
+                this.video.pause();
+            }
+        };
+        
+        this.video.addEventListener('click', this._onVideoClick);
+    }
+
+    destroy() {
+        super.destroy();
+        this.video.removeEventListener('click', this._onVideoClick);
+    }
+
+    extractMetadata() {
+        let actualUrl = window.location.href;
+        let videoId = window.location.pathname || "generic-video";
+        
+        return { 
+            platform: 'generic', 
+            videoId: videoId, 
+            url: actualUrl, 
+            title: document.title || "Bilinmeyen Video" 
+        };
+    }
+}
+
 class CoWatchCore {
     constructor() {
         this.currentRoomId = null;
@@ -210,6 +245,10 @@ class CoWatchCore {
         this.redirectEnabled = true;
         this.showProgressBar = true;
         this.typingTimeout = null;
+        
+        // YENİ: WhatsApp Tarzı Gruplama ve Yanıtlama için değişkenler
+        this.lastMessageSender = null; 
+        this.replyingTo = null;        
 
         this.topUrl = window.location.href;
         if (!this.isMainFrame) {
@@ -241,8 +280,6 @@ class CoWatchCore {
                 position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important;
                 z-index: 2147483645 !important; border: none !important; background: #000 !important;
             }
-            /* Sabit mod (chat kaydırma) + tiyatro modu birlikte açıksa, video 100vw yerine
-               sidebar'a yer açacak şekilde daralsın - yoksa video sidebar'ın altında/arkasında kalır */
             body.cw-theater-mode.cw-fixed-mode iframe[src*="molystream"],
             body.cw-theater-mode.cw-fixed-mode iframe[src*="vidmoly"],
             body.cw-theater-mode.cw-fixed-mode iframe[src*="upstream"],
@@ -259,34 +296,29 @@ class CoWatchCore {
                 overflow-x: hidden !important;
                 transition: width 0.3s ease;
             }
-		
-	    html.cw-youtube-fixed-mode, body.cw-youtube-fixed-mode {
+        
+        html.cw-youtube-fixed-mode, body.cw-youtube-fixed-mode {
                 width: calc(100vw - 340px) !important;
                 overflow-x: hidden !important;
                 margin: 0 !important;
             }
-            /* YouTube'un ana sayfa motorunu daraltır */
             html.cw-youtube-fixed-mode ytd-app {
                 width: calc(100vw - 340px) !important;
             }
-            /* YouTube üst arama çubuğunun (masthead) chat'in altında kalmasını engeller */
             html.cw-youtube-fixed-mode ytd-masthead {
                 width: calc(100vw - 340px) !important;
                 right: 340px !important; 
             }
 
-
-	    html.cw-amazon-fixed-mode, body.cw-amazon-fixed-mode {
+        html.cw-amazon-fixed-mode, body.cw-amazon-fixed-mode {
                 width: calc(100vw - 340px) !important;
                 overflow-x: hidden !important;
                 margin: 0 !important;
             }
-            /* Amazon'un normal ekranında player'ı daralt */
             html.cw-amazon-fixed-mode .webPlayerContainer,
             html.cw-amazon-fixed-mode .atvwebplayersdk-playercontainer {
                 width: calc(100vw - 340px) !important;
             }
-            /* Amazon tam ekrandayken sağdan chat kadar boşluk (padding) bırak */
             body.cw-amazon-fixed-mode :fullscreen {
                 padding-right: 340px !important;
                 box-sizing: border-box !important;
@@ -353,11 +385,8 @@ class CoWatchCore {
     }
 
     triggerReflow() {
-        // body genişlik değişikliği pencere boyutunu değiştirmediği için resize
-        // event'i kendiliğinden ateşlenmiyor; JS ile boyutlanan player'ları
-        // (Amazon/YouTube/DiziBox host'ları) yeniden ölçmeye zorluyoruz.
         window.dispatchEvent(new Event('resize'));
-        setTimeout(() => window.dispatchEvent(new Event('resize')), 350); // CSS transition (0.3s) bitince tekrar
+        setTimeout(() => window.dispatchEvent(new Event('resize')), 350); 
     }
 
     setFixedMode(enabled) {
@@ -583,6 +612,30 @@ class CoWatchCore {
                 40% { transform: translateY(-4px); opacity: 1; }
             }
 
+        /* GRUPLANMIŞ MESAJLAR (WhatsApp stili) */
+        .msg-grouped { margin-top: -6px; }
+        .msg-grouped .cw-nick { display: none; }
+        .msg-self.msg-grouped .cw-bubble { border-top-right-radius: 4px; }
+        .msg-other.msg-grouped .cw-bubble { border-top-left-radius: 4px; }
+
+        /* MESAJ YANITLAMA (Reply) */
+        .cw-message { position: relative; }
+        .cw-reply-btn { position: absolute; right: -25px; top: 50%; transform: translateY(-50%); cursor: pointer; opacity: 0; transition: opacity 0.2s; font-size: 14px; background: none; border: none; color: #888; }
+        .msg-self .cw-reply-btn { right: auto; left: -25px; }
+        .cw-message:hover .cw-reply-btn { opacity: 1; }
+        .cw-reply-btn:hover { color: var(--accent); }
+        .cw-reply-block { font-size: 10px; background: rgba(0,0,0,0.2); border-left: 2px solid var(--accent); padding: 4px 6px; margin-bottom: 4px; border-radius: 4px; color: #aaa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        #cw-reply-preview { display: none; background: rgba(255,153,0,0.1); border-left: 3px solid var(--accent); padding: 6px 10px; font-size: 11px; color: #ccc; flex-shrink: 0; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); }
+        #cw-reply-preview.active { display: flex; }
+        #cw-reply-close { cursor: pointer; color: #ff4444; font-weight: bold; background: none; border: none; }
+
+        /* KAYBOLAN SİSTEM MESAJLARI */
+        .sys-msg.fade-out { animation: fadeOutRemove 0.5s ease forwards; animation-delay: 3.5s; }
+        @keyframes fadeOutRemove {
+            0% { opacity: 1; max-height: 50px; margin: 4px 0; }
+            100% { opacity: 0; max-height: 0; margin: 0; padding: 0; overflow: hidden; }
+        }
+
             /* INPUT AREA */
             #cw-input-area {
                 display: flex; gap: 6px;
@@ -767,7 +820,19 @@ class CoWatchCore {
             <div id="cw-body">
                 <div id="view-chat" class="cw-view active-view">
                     <div id="cw-chat-history"></div>
-                    <div id="cw-typing"><span id="cw-typing-text"></span></div>
+                    
+                    <div id="cw-typing" style="opacity: 0; transition: opacity 0.3s; pointer-events: none;">
+                        <div class="cw-typing-dots"><span></span><span></span><span></span></div>
+                        <span id="cw-typing-text"></span>
+                    </div>
+
+                    <div id="cw-reply-preview">
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                            <b style="color:var(--accent)" id="cw-reply-name"></b>: <span id="cw-reply-text"></span>
+                        </div>
+                        <button id="cw-reply-close">✕</button>
+                    </div>
+
                     <div style="position:relative;">
                         <div id="cw-emoji-picker">
                             ${['😀','😂','😍','🥹','😎','🤔','😴','😭','🤣','❤️','🔥','👏','🎉','💀','🙏','👀','🤯','😤','🥶','🍿','⏸️','▶️','🎬','💬','🎭','✨','💯','🤌'].map(e => `<span>${e}</span>`).join('')}
@@ -843,19 +908,16 @@ class CoWatchCore {
         const edgeTrigger = this.shadow.getElementById('cw-edge-trigger');
         const emojiPicker = this.shadow.getElementById('cw-emoji-picker');
 
-        // Keyboard event isolation
         const blockSocks = (e) => e.stopPropagation();
         chatInput.addEventListener('keydown', blockSocks);
         chatInput.addEventListener('keypress', blockSocks);
         chatInput.addEventListener('keyup', blockSocks);
 
-        // Typing indicator
         chatInput.addEventListener('input', () => {
             if (!this.currentRoomId) return;
             this.safeSendMessage({ action: "OUT_TYPING", data: { roomId: this.currentRoomId } });
         });
 
-        // Tabs
         ['chat', 'users', 'settings'].forEach(tab => {
             this.shadow.getElementById(`tab-${tab}`).addEventListener('click', (e) => {
                 this.shadow.querySelectorAll('.cw-tabs button').forEach(b => b.classList.remove('active'));
@@ -865,7 +927,6 @@ class CoWatchCore {
             });
         });
 
-        // Compact drag
         let isDragging = false, offsetX, offsetY;
         header.addEventListener('mousedown', (e) => {
             if (!app.classList.contains('mode-compact') || e.target.tagName.toLowerCase() === 'button') return;
@@ -881,14 +942,12 @@ class CoWatchCore {
         });
         document.addEventListener('mouseup', () => { isDragging = false; document.body.style.userSelect = ''; });
 
-        // Mode buttons
         this.shadow.querySelectorAll('.mod-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 this.shadow.querySelectorAll('.mod-btn').forEach(b => b.classList.remove('active'));
                 e.target.classList.add('active');
                 const newMode = e.target.getAttribute('data-mode');
 
-                // Clean up previous mode
                 app.classList.remove('show');
                 this.setFixedMode(false);
                 edgeTrigger.style.display = 'none';
@@ -907,7 +966,6 @@ class CoWatchCore {
             });
         });
 
-        // Interactive mode hover trigger
         edgeTrigger.addEventListener('mouseenter', () => {
             if (app.classList.contains('mode-interactive')) app.classList.add('show');
         });
@@ -915,7 +973,6 @@ class CoWatchCore {
             if (app.classList.contains('mode-interactive')) app.classList.remove('show');
         });
 
-        // Leave room
         this.shadow.getElementById('btn-leave-ui').onclick = () => {
             if (confirm("Odadan tamamen ayrılmak istediğinize emin misiniz?")) {
                 chrome.storage.local.remove(['savedRoomId']);
@@ -928,19 +985,42 @@ class CoWatchCore {
             }
         };
 
-        // Send message
+        // YENİ: Mesaj Yanıtlama Butonlarına Tıklama (Event Delegation)
+        this.shadow.getElementById('cw-chat-history').addEventListener('click', (e) => {
+            if (e.target.classList.contains('cw-reply-btn')) {
+                const msgNode = e.target.closest('.cw-message');
+                const nick = msgNode.getAttribute('data-nick');
+                const text = msgNode.getAttribute('data-text');
+                
+                this.replyingTo = { nickname: nick, text: text };
+                this.shadow.getElementById('cw-reply-name').innerText = nick;
+                this.shadow.getElementById('cw-reply-text').innerText = text;
+                this.shadow.getElementById('cw-reply-preview').classList.add('active');
+                chatInput.focus();
+            }
+        });
+
+        // YENİ: Yanıtı İptal Etme
+        this.shadow.getElementById('cw-reply-close').onclick = () => {
+            this.replyingTo = null;
+            this.shadow.getElementById('cw-reply-preview').classList.remove('active');
+        };
+
         const sendMsg = () => {
             const text = chatInput.value.trim();
             if (text && this.currentRoomId) {
-                this.safeSendMessage({ action: "OUT_SEND_MESSAGE", data: { roomId: this.currentRoomId, message: text } });
+                this.safeSendMessage({ action: "OUT_SEND_MESSAGE", data: { roomId: this.currentRoomId, message: text, replyTo: this.replyingTo } });
                 chatInput.value = '';
                 emojiPicker.classList.remove('open');
+                
+                // Mesaj gittikten sonra yanıt önizlemesini temizle
+                this.replyingTo = null;
+                this.shadow.getElementById('cw-reply-preview').classList.remove('active');
             }
         };
         this.shadow.getElementById('btn-send').onclick = sendMsg;
         chatInput.onkeypress = (e) => { if (e.key === 'Enter') { e.stopPropagation(); sendMsg(); } };
 
-        // Emoji picker
         this.shadow.getElementById('btn-emoji').addEventListener('click', (e) => {
             e.stopPropagation();
             emojiPicker.classList.toggle('open');
@@ -958,18 +1038,15 @@ class CoWatchCore {
             }
         });
 
-        // Progress bar switch
         this.shadow.getElementById('sw-progress').addEventListener('change', (e) => {
             this.showProgressBar = e.target.checked;
             this.shadow.getElementById('cw-manual-bar-container').style.display = e.target.checked ? 'block' : 'none';
         });
 
-        // Redirect switch (admin only)
         this.shadow.getElementById('sw-redirect').addEventListener('change', (e) => {
             this.redirectEnabled = e.target.checked;
         });
 
-        // Video controls
         this.shadow.getElementById('btn-playpause').onclick = () => {
             if (this.activeHandler && this.activeHandler.video)
                 this.activeHandler.video.paused ? this.activeHandler.video.play() : this.activeHandler.video.pause();
@@ -1008,8 +1085,11 @@ class CoWatchCore {
                 this.activeHandler = new AmazonHandler(video, this.currentRoomId, this);
             } else if (url.includes("youtube")) {
                 this.activeHandler = new YouTubeHandler(video, this.currentRoomId, this);
-            } else {
+            } else if (url.match(/dizibox|vidmoly|upstream|molystream|fullhdfilmizlesene|rapidvid/i)) {
                 this.activeHandler = new DiziboxHandler(video, this.currentRoomId, this);
+            } else {
+                // YENİ: Hiçbirine uymuyorsa Evrensel (Generic) Handler'ı başlat
+                this.activeHandler = new GenericHandler(video, this.currentRoomId, this);
             }
         };
 
@@ -1097,44 +1177,53 @@ class CoWatchCore {
         return `${m}:${s}`;
     }
 
-    addMessage(senderNick, text, type = "normal") {
+    // YENİ: Gruplama ve Yanıtlama (Reply) mekanizması
+    addMessage(senderNick, text, type = "normal", replyTo = null, autoHide = false) {
         if (!this.shadow || text == null) return;
         const history = this.shadow.getElementById('cw-chat-history');
+        
         if (type === "system") {
-            history.innerHTML += `<div class="sys-msg">${text}</div>`;
+            const autoHideClass = autoHide ? 'fade-out' : '';
+            history.insertAdjacentHTML('beforeend', `<div class="sys-msg ${autoHideClass}">${text}</div>`);
+            this.lastMessageSender = null; // Sistem mesajı gruplamayı kırar
         } else if (type === "error") {
-            history.innerHTML += `<div class="sys-err">${text}</div>`;
+            history.insertAdjacentHTML('beforeend', `<div class="sys-err">${text}</div>`);
+            this.lastMessageSender = null;
         } else {
             const isSelf = (senderNick === this.currentUser.nickname);
-            const cls = isSelf ? 'msg-self' : 'msg-other';
-            history.innerHTML += `<div class="cw-message ${cls}"><span class="cw-nick">${senderNick}</span><div class="cw-bubble">${text}</div></div>`;
-
-            // Interactive mode: pulse edge bar on incoming message
-            if (!isSelf) {
-                const app = this.shadow.getElementById('cw-app');
-                if (app.classList.contains('mode-interactive') && !app.classList.contains('show')) {
-                    const bar = this.shadow.getElementById('cw-edge-bar');
-                    if (bar) {
-                        bar.classList.remove('notify');
-                        void bar.offsetWidth;
-                        bar.classList.add('notify');
-                        bar.addEventListener('animationend', () => bar.classList.remove('notify'), { once: true });
-                    }
-                }
+            const isGrouped = (this.lastMessageSender === senderNick) && !replyTo;
+            
+            const cls = (isSelf ? 'msg-self' : 'msg-other') + (isGrouped ? ' msg-grouped' : '');
+            
+            let replyHtml = '';
+            if (replyTo) {
+                replyHtml = `<div class="cw-reply-block"><b>${replyTo.nickname}</b>: ${replyTo.text}</div>`;
             }
+
+            const safeText = text.replace(/"/g, '&quot;');
+            history.insertAdjacentHTML('beforeend', `
+                <div class="cw-message ${cls}" data-nick="${senderNick}" data-text="${safeText}">
+                    <button class="cw-reply-btn" title="Yanıtla">${isSelf ? '↪' : '↩'}</button>
+                    <span class="cw-nick">${senderNick}</span>
+                    <div class="cw-bubble">${replyHtml}${text}</div>
+                </div>
+            `);
+            this.lastMessageSender = senderNick;
         }
         history.scrollTop = history.scrollHeight;
     }
 
     showTyping(nickname) {
         if (!this.shadow) return;
-        const typingText = this.shadow.getElementById('cw-typing-text');
         const typingEl = this.shadow.getElementById('cw-typing');
-        typingEl.innerHTML = `<div class="cw-typing-dots"><span></span><span></span><span></span></div><span>${nickname} yazıyor...</span>`;
+        const typingText = this.shadow.getElementById('cw-typing-text');
+        
+        typingText.innerText = `${nickname} yazıyor...`;
+        typingEl.style.opacity = '1';
 
         if (this._typingClearTimeout) clearTimeout(this._typingClearTimeout);
         this._typingClearTimeout = setTimeout(() => {
-            if (typingEl) typingEl.innerHTML = '';
+            if (typingEl) typingEl.style.opacity = '0';
         }, 3000);
     }
 
@@ -1156,13 +1245,15 @@ class CoWatchCore {
         if (this.activeHandler) this.activeHandler.roomId = roomId;
 
         this.shadow.getElementById('cw-room-id').innerText = roomId;
+        
+        this.lastMessageSender = null; // Her oda değişiminde gruplamayı sıfırla
         this.shadow.getElementById('cw-chat-history').innerHTML = '';
 
         if (serverRes.role === 'admin' || serverRes.isAdmin) {
             this.shadow.getElementById('row-redirect').style.display = 'flex';
         }
 
-        if (serverRes.chatHistory) serverRes.chatHistory.forEach(m => this.addMessage(m.nickname, m.text));
+        if (serverRes.chatHistory) serverRes.chatHistory.forEach(m => this.addMessage(m.nickname, m.text, "normal", m.replyTo));
         this.renderUserList(serverRes.activeUsers || []);
         if (!isReconnect && serverRes.roomState) this.reconcileRoomVideo(serverRes.roomState);
     }
@@ -1242,10 +1333,10 @@ class CoWatchCore {
                 this.executeCommandSafe(request.cmd);
             }
             else if (request.action === "NEW_MESSAGE") {
-                this.addMessage(request.msg.nickname, request.msg.text);
+                this.addMessage(request.msg.nickname, request.msg.text, "normal", request.msg.replyTo);
             }
             else if (request.action === "SYSTEM_MESSAGE") {
-                this.addMessage("Sistem", request.msg.text, "system");
+                this.addMessage("Sistem", request.msg.text, "system", null, request.msg.autoHide);
             }
             else if (request.action === "SYSTEM_ERROR") {
                 this.addMessage("Uyarı", request.msg.message, "error");
