@@ -110,3 +110,28 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 });
+
+const updateBtn = document.getElementById('btn-update');
+
+    chrome.storage.local.get(['hasUpdate', 'newVer', 'zipUrl'], (res) => {
+        if (res.hasUpdate && res.zipUrl) {
+            updateBtn.style.display = 'block';
+            updateBtn.innerText = `🚀 ${res.newVer} Sürümüne Güncelle`;
+            
+            updateBtn.addEventListener('click', () => {
+                // ZIP dosyasını indir
+                chrome.downloads.download({
+                    url: res.zipUrl,
+                    filename: "co-watch-guncel.zip"
+                });
+                
+                // İndirme başladıktan sonra kullanıcıya ne yapacağını söyle
+                alert("Güncel sürüm (ZIP) indiriliyor!\n\n1. İnen dosyayı klasöre çıkartın.\n2. Mevcut eklenti klasörünün üzerine yazın.\n3. chrome://extensions sayfasından eklentiyi yenile (Reload) butonuna basın.");
+                
+                // İkon bildirimini temizle
+                chrome.action.setBadgeText({ text: "" });
+                chrome.storage.local.remove(['hasUpdate', 'newVer', 'zipUrl']);
+                updateBtn.style.display = 'none';
+            });
+        }
+    });
