@@ -122,7 +122,7 @@ const updateBtn = document.getElementById('btn-update');
                 // ZIP dosyasını indir
                 chrome.downloads.download({
                     url: res.zipUrl,
-                    filename: "co-watch-guncel.zip"
+                    filename: "co-watch-${res.newVer}.zip"
                 });
                 
                 // İndirme başladıktan sonra kullanıcıya ne yapacağını söyle
