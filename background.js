@@ -207,3 +207,50 @@ chrome.webRequest.onBeforeRequest.addListener(
     ["requestBody"] 
 );
 
+// ============================================================================
+// GÜNCELLEME KONTROLÜ
+// ============================================================================
+
+// GitHub reposundaki son release'i çeken API adresi
+const githubApi = "https://api.github.com/repos/rufflesia/co-watch/releases/latest";
+
+async function checkUpdate() {
+    try {
+        let res = await fetch(githubApi);
+        let data = await res.json();
+        
+        if (!data.tag_name) return; // Release yoksa çık
+        
+        let remoteVer = data.tag_name.replace('v', ''); 
+        let localVer = chrome.runtime.getManifest().version; 
+
+        // Basit versiyon karşılaştırması (Örn: "1.4.0" > "1.3.0")
+        if (remoteVer !== localVer) {
+            // Storage'a yeni sürüm bilgisini kaydet
+            chrome.storage.local.set({ hasUpdate: true, newVer: remoteVer, zipUrl: data.zipball_url });
+            
+            // Eklenti ikonuna kırmızı ünlem koy
+            chrome.action.setBadgeText({ text: "!" });
+            chrome.action.setBadgeBackgroundColor({ color: "#ff4444" });
+        }
+    } catch (err) {
+        console.log("guncelleme kontrol hatasi:", err);
+    }
+}
+
+// Günde 1 kez (1440 dakika) kontrol etmesi için alarm kur
+chrome.alarms.create("checkUpdateAlarm", { periodInMinutes: 1440 });
+
+// Mevcut onAlarm dinleyicini şu şekilde güncelle
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === "keepAlive" && socket && socket.connected) {
+        // SW'yi uyanık tutmak için boş bir işlem
+    }
+    
+    if (alarm.name === "checkUpdateAlarm") {
+        checkUpdate();
+    }
+});
+
+// Eklenti ilk açıldığında da bir kez kontrol et
+checkUpdate();
