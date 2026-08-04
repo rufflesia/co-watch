@@ -80,7 +80,7 @@ io.on('connection', (socket) => {
             nickname, 
             role: 'admin', 
             isOnline: true, 
-            tolerance: 2.0, 
+            tolerance: 4.0, 
             corrections: 0, 
             isBuffering: false, 
             hasSuccessfullySynced: true
@@ -115,7 +115,7 @@ io.on('connection', (socket) => {
             } else {
                 // Yepyeni biri geldi, onu sıfırdan misafir olarak kaydet
                 room.users[socket.id] = { 
-                    id: socket.id, nickname: nickname || "Misafir", role: 'guest', isOnline: true, tolerance: 2.0, corrections: 0, isBuffering: false, hasSuccessfullySynced: false
+                    id: socket.id, nickname: nickname || "Misafir", role: 'guest', isOnline: true, tolerance: 4.0, corrections: 0, isBuffering: false, hasSuccessfullySynced: false
                 };
             }
             
@@ -271,10 +271,10 @@ io.on('connection', (socket) => {
                 socket.emit('executeCommand', { action: 'seek', time: room.videoState.time, videoId: room.videoState.videoId });
                 
                 user.corrections += 1;
-                if (user.corrections > 3 && user.tolerance === 2.0) {
-                    user.tolerance = 4.0;
+                if (user.corrections > 3 && user.tolerance === 4.0) {
+                    user.tolerance = 8.0;
                     socket.emit('systemError', { message: "Bağlantınız zayıf. İzleme keyfiniz için esneklik artırıldı." });
-                    setTimeout(() => { user.corrections = 0; user.tolerance = 2.0; }, 60000);
+                    setTimeout(() => { user.corrections = 0; user.tolerance = 4.0; }, 90000);
                 }
             }
         }
