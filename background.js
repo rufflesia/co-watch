@@ -81,7 +81,7 @@ function initSocket() {
 function broadcastToContentScript(message) {
     chrome.tabs.query({}, (tabs) => {
         tabs.forEach(tab => {
-            if (tab.url && tab.url.match(/amazon|primevideo|youtube|dizibox|fullhdfilmizlesene|rapidvid/i)) {
+            if (tab.url && tab.url.match(/amazon|primevideo|youtube|dizibox|fullhdfilmizlesene|rapidvid|vidmoly|upstream|molystream/i)) {
                 chrome.tabs.sendMessage(tab.id, message, () => {
                     if (chrome.runtime.lastError) { /* Pasif sekmeleri yoksay */ }
                 });
@@ -149,7 +149,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // ÜST SAYFA URL TAKİBİ (SPA navigasyonlarında iframe'lerin haberdar olması için)
 // ============================================================================
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.url && tab.url && tab.url.match(/dizibox|vidmoly|upstream|molystream|fullhdfilmizlesene|rapidvid/i)) {
+    if (changeInfo.url && tab.url && tab.url.match(/dizibox|vidmoly|upstream|molystream|fullhdfilmizlesene|rapidvid|vidmoly|upstream|molystream/i)) {
         chrome.tabs.sendMessage(tabId, {
             action: "TOP_URL_CHANGED",
             url: changeInfo.url
@@ -195,13 +195,19 @@ chrome.webRequest.onBeforeRequest.addListener(
     },
     { 
         urls: [
-            "*://*.primevideo.com/*", 
-            "*://*.amazon.com/*",
-            "*://*.amazon.com.tr/*", 
-            "*://*.youtube.com/*",
-            "*://*.akamaihd.net/*", 
-            "*://*.dizibox.live/*", 
-            "*://*.cloudfront.net/*"   
+            "*://*.primevideo.com/*",
+        "*://*.amazon.com/*",
+        "*://*.amazon.com.tr/*",
+        "*://*.youtube.com/*",
+        "*://*.netflix.com/*",
+        "*://*.dizibox.live/*",
+        "*://*.vidmoly.to/*",
+        "*://*.upstream.to/*",
+	"*://*.rapidvid.net/*",
+	"*://*.molystream.org/*",
+	"*://*.fullhdfilmizlesene.mx/*",
+	"*://*.vidmoly.biz/*",
+    	"*://*.molystream.net/*"  
         ] 
     },
     ["requestBody"] 
