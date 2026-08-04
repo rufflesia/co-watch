@@ -918,6 +918,38 @@ class CoWatchCore {
             this.safeSendMessage({ action: "OUT_TYPING", data: { roomId: this.currentRoomId } });
         });
 
+        const roomBadge = this.shadow.getElementById('cw-room-id');
+        
+        roomBadge.addEventListener('click', () => {
+            // Eğer bir odada değilsek kopyalama yapma
+            if (!this.currentRoomId) return; 
+            
+            // Metni panoya (clipboard) kopyala
+            navigator.clipboard.writeText(this.currentRoomId).then(() => {
+                // Kopyalandı yazısı ve rengini yeşil yap
+                roomBadge.innerText = "Kopyalandı!";
+                roomBadge.style.background = "rgba(40, 167, 69, 0.15)";
+                roomBadge.style.color = "#28a745"; 
+                roomBadge.style.borderColor = "#28a745";
+                
+                // 1.5 saniye (1500 ms) sonra orijinal haline geri döndür
+                setTimeout(() => {
+                    // Eğer kullanıcı bu 1.5 saniyede odadan çıkmadıysa eski numarayı yaz
+                    if (this.currentRoomId) {
+                        roomBadge.innerText = this.currentRoomId;
+                    } else {
+                        roomBadge.innerText = "Bekleniyor";
+                    }
+                    
+                    // Rengi orijinal CSS ayarlarına döndürmek için stilleri temizle
+                    roomBadge.style.background = "";
+                    roomBadge.style.color = "";
+                    roomBadge.style.borderColor = "";
+                }, 1500);
+            }).catch(err => {
+                console.log("Kopyalama başarısız oldu:", err);
+            });
+        });
         ['chat', 'users', 'settings'].forEach(tab => {
             this.shadow.getElementById(`tab-${tab}`).addEventListener('click', (e) => {
                 this.shadow.querySelectorAll('.cw-tabs button').forEach(b => b.classList.remove('active'));
