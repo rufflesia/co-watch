@@ -32,53 +32,83 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => { statusMsg.textContent = ''; }, 3000);
     }
 
-   function verifyAndSend(actionType, roomId, nickname) {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            const tab = tabs[0];
-            if (!tab || !tab.url.match(/amazon|primevideo|youtube|dizibox|fullhdfilmizlesene|rapidvid/i)) {
-                showStatus("Önce desteklenen bir video sitesi açın!", "#ff4444");
-                return;
-            }
+   // popup.js içerisinde verifyAndSend'i bununla değiştiriyoruz:
+function verifyAndSend(actionType, roomId, nickname) {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tab = tabs[0];
+        // Sadece HTTP/HTTPS sayfalarında çalışmasını sağla, URL kısıtlamasını kaldır.
+        if (!tab || !tab.url.startsWith("http")) {
+            showStatus("Lütfen geçerli bir web sayfasında işlem yapın!", "#ff4444");
+            return;
+        }
 
-            chrome.tabs.sendMessage(tab.id, { action: "GET_CURRENT_METADATA" }, (response) => {
-                
-                // YENİ: Sayfadan yanıt gelmese bile URL'den platformu tahmin et (Unknown kalmasın)
-                let fallbackPlatform = "unknown";
-                if (tab.url.match(/amazon|primevideo/i)) fallbackPlatform = "amazon";
-                else if (tab.url.match(/youtube/i)) fallbackPlatform = "youtube";
-                else if (tab.url.match(/dizibox|vidmoly|upstream|molystream|fullhdfilmizlesene|rapidvid/i)) fallbackPlatform = "dizibox";
-
-                let videoData = { platform: fallbackPlatform, videoId: null, url: tab.url };
-                
-                if (response && response.metadata) {
-                    videoData = response.metadata;
-                }
-
-                chrome.runtime.sendMessage({
-                    action: actionType,
-                    data: { 
-                        roomId, 
-                        nickname, 
-                        platform: videoData.platform, 
-                        videoId: videoData.videoId, 
-                        url: videoData.url 
+        // 1. ADIM: İçerik betiği sayfada var mı diye kontrol et (Statik siteler için)
+        chrome.tabs.sendMessage(tab.id, { action: "GET_CURRENT_METADATA" }, (response) => {
+            if (chrome.runtime.lastError || !response) {
+                // 2. ADIM: Yanıt yoksa (URL değişmişse), dinamik olarak content_script.js'i sayfaya göm
+                chrome.scripting.executeScript({
+                    target: { tabId: tab.id, allFrames: true },
+                    files: ["content_script.js"]
+                }, () => {
+                    if (chrome.runtime.lastError) {
+                        showStatus("Bu sayfaya erişim izni yok veya yüklenemedi!", "#ff4444");
+                        return;
                     }
-                }, (serverResponse) => {
-                    if (serverResponse && serverResponse.success) {
-                        chrome.storage.local.set({ savedRoomId: roomId, savedNickname: nickname }, () => {
-                            chrome.tabs.sendMessage(tab.id, { action: "FORCE_UI_STATE", actionType, roomId, nickname, response: serverResponse });
-                            viewSetup.classList.remove('active-view');
-                            viewActive.classList.add('active-view');
-                            activeRoomIdDisplay.textContent = roomId;
-                            window.close();
-                        });
-                    } else {
-                        showStatus(serverResponse?.message || "Sunucu odada hata bildirdi!", "#ff4444");
-                    }
+                    // Yükleme tamamlandıktan yarım saniye sonra asıl işlemi başlat
+                    setTimeout(() => fetchMetadataAndProceed(tab, actionType, roomId, nickname), 500);
                 });
-            });
+            } else {
+                // Betik zaten var (Amazon, YouTube vb.), doğrudan devam et
+                fetchMetadataAndProceed(tab, actionType, roomId, nickname, response);
+            }
         });
+    });
+}
+
+// YENİ FONKSİYON: Asıl işlem akışını yöneten kısım (eski verifyAndSend'in devamı)
+function fetchMetadataAndProceed(tab, actionType, roomId, nickname, initialResponse = null) {
+    const proceed = (response) => {
+        let fallbackPlatform = "unknown";
+        if (tab.url.match(/amazon|primevideo/i)) fallbackPlatform = "amazon";
+        else if (tab.url.match(/youtube/i)) fallbackPlatform = "youtube";
+        else fallbackPlatform = "generic"; // Tüm değişen dizi sitelerini genel (generic) say
+
+        let videoData = { platform: fallbackPlatform, videoId: null, url: tab.url };
+        
+        if (response && response.metadata) {
+            videoData = response.metadata;
+        }
+
+        chrome.runtime.sendMessage({
+            action: actionType,
+            data: { 
+                roomId, 
+                nickname, 
+                platform: videoData.platform, 
+                videoId: videoData.videoId, 
+                url: videoData.url 
+            }
+        }, (serverResponse) => {
+            if (serverResponse && serverResponse.success) {
+                chrome.storage.local.set({ savedRoomId: roomId, savedNickname: nickname }, () => {
+                    chrome.tabs.sendMessage(tab.id, { action: "FORCE_UI_STATE", actionType, roomId, nickname, response: serverResponse });
+                    document.getElementById('view-setup').classList.remove('active-view');
+                    document.getElementById('view-active').classList.add('active-view');
+                    document.getElementById('active-room-id').textContent = roomId;
+                    // window.close(); // İstersen orijinalindeki gibi bırakabilirsin
+                });
+            } else {
+                showStatus(serverResponse?.message || "Sunucu odada hata bildirdi!", "#ff4444");
+            }
+        });
+    };
+
+    if (initialResponse) {
+        proceed(initialResponse);
+    } else {
+        chrome.tabs.sendMessage(tab.id, { action: "GET_CURRENT_METADATA" }, (res) => proceed(res));
     }
+}
 
     document.getElementById('btn-create').addEventListener('click', () => {
         const nick = nickInput.value.trim() || "Yusuf";
@@ -106,7 +136,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('btn-show-chat').addEventListener('click', () => {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if(tabs[0]) chrome.tabs.sendMessage(tabs[0].id, { action: "SHOW_CHAT" });
+            const tab = tabs[0];
+            if (!tab) return;
+            
+            // 1. Sayfada içerik betiği aktif mi diye yokla
+            chrome.tabs.sendMessage(tab.id, { action: "GET_CURRENT_METADATA" }, (response) => {
+                if (chrome.runtime.lastError || !response) {
+                    // 2. Betik yoksa (sayfa yenilenmiş veya dinamik siteyse) enjekte et
+                    chrome.scripting.executeScript({
+                        target: { tabId: tab.id, allFrames: true },
+                        files: ["content_script.js"]
+                    }, () => {
+                        if (!chrome.runtime.lastError) {
+                            // Betik yüklendikten yarım saniye sonra arayüzü aç
+                            setTimeout(() => {
+                                chrome.tabs.sendMessage(tab.id, { action: "SHOW_CHAT" });
+                            }, 500);
+                        } else {
+                            showStatus("Bu sayfada chat açılamıyor!", "#ff4444");
+                        }
+                    });
+                } else {
+                    // 3. Betik zaten aktifse (Amazon/YouTube vb.) doğrudan chati göster
+                    chrome.tabs.sendMessage(tab.id, { action: "SHOW_CHAT" });
+                }
+            });
         });
     });
 });
