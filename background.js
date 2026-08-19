@@ -81,9 +81,10 @@ function initSocket() {
 function broadcastToContentScript(message) {
     chrome.tabs.query({}, (tabs) => {
         tabs.forEach(tab => {
-            if (tab.url && tab.url.match(/amazon|primevideo|youtube|dizibox|fullhdfilmizlesene|rapidvid|vidmoly|upstream|molystream/i)) {
+            
+            if (tab.url && tab.url.startsWith("http")) {
                 chrome.tabs.sendMessage(tab.id, message, () => {
-                    if (chrome.runtime.lastError) { /* Pasif sekmeleri yoksay */ }
+                    if (chrome.runtime.lastError) { /* Pasif veya eklenti olmayan sekmeleri yoksay */ }
                 });
             }
         });
@@ -149,7 +150,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // ÜST SAYFA URL TAKİBİ (SPA navigasyonlarında iframe'lerin haberdar olması için)
 // ============================================================================
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.url && tab.url && tab.url.match(/dizibox|vidmoly|upstream|molystream|fullhdfilmizlesene|rapidvid|vidmoly|upstream|molystream/i)) {
+    // Regex listesini kaldırıp genel bir http/https kontrolüne geçtik
+    if (changeInfo.url && tab.url && tab.url.startsWith("http")) {
         chrome.tabs.sendMessage(tabId, {
             action: "TOP_URL_CHANGED",
             url: changeInfo.url
